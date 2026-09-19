@@ -1,6 +1,6 @@
 # Fiscalenergia
 
-App de análise de faturas de energia elétrica: upload da conta de luz, extração automática dos dados, detecção de cobranças indevidas e oportunidades de economia, com dashboard de consumo histórico.
+SaaS de fiscalização de consumo de energia elétrica: confere se os valores da fatura (kWh e R$) estão corretos, estima quanto cada aparelho/eletrodoméstico consome via uma varredura guiada por cômodo, identifica quem mais pesa na conta e sugere economias priorizadas por impacto financeiro.
 
 Público: empresas (com uma ou várias unidades consumidoras) e consumidores finais.
 
