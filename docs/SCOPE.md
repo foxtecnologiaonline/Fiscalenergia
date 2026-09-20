@@ -104,6 +104,7 @@ Bill (fatura)
     tarifa unitária, valor — ex: consumo TE, TUSD, bandeira, ICMS,
     COSIP/iluminação pública, outros encargos),
   extractedData (JSON bruto retornado pelo Claude, para auditoria/debug),
+  errorMessage? (preenchido quando status = "error"),
   createdAt
 
 TariffReference (tabela de referência mantida manualmente)
@@ -248,6 +249,11 @@ ranking "quem mais consome" e também da regra de possível desperdício
   `actualSavingsKwh`/`actualSavingsAmount`, exibindo "economia estimada vs
   economia real obtida".
 - Lista de sugestões é sempre ordenada por impacto financeiro estimado.
+- **Limitação conhecida**: se o usuário aplicar mais de uma sugestão
+  antes da próxima fatura chegar, a economia real observada nessa fatura
+  é conjunta — o app não consegue atribuir isoladamente quanto veio de
+  cada ação. Nesse caso, exibir a economia real agregada nas sugestões
+  daquele ciclo, deixando claro que é o efeito combinado.
 
 ### 5.7 Fase 2 (pós-MVP)
 
@@ -364,3 +370,8 @@ fase por vez.
   prova), possivelmente com revisão jurídica antes do lançamento.
 - **Modelo de monetização** (assinatura, % da economia identificada, etc.)
   não afeta o escopo técnico do MVP e pode ser decidido em paralelo.
+- **Escolha do modelo Claude para extração** (Opus vs. Sonnet): há um
+  compromisso entre acurácia e custo por fatura processada. O plano de
+  implementação recomenda começar com `claude-opus-5` e só considerar um
+  modelo mais econômico depois de medir a acurácia real com as faturas de
+  teste — ver `docs/IMPLEMENTATION_PLAN.md`, Fase 3.

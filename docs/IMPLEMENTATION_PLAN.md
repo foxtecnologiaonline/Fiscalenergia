@@ -37,6 +37,7 @@
   /api/auth/[...nextauth]
   /api/consumer-units
   /api/consumer-units/[unitId]/appliances
+  /api/consumer-units/[unitId]/appliances/[applianceId]
   /api/bills
   /api/bills/[billId]/process
   /api/suggestions/[suggestionId]/apply
@@ -110,7 +111,9 @@ ConsumerUnit   { id, ownerId -> User, companyId? -> Company, code,
 ```
 
 **Tarefas**
-- [ ] Migration para `Company` e `ConsumerUnit`.
+- [ ] Migration para `Company` e `ConsumerUnit`, com índice único em
+      `(ownerId, code)` de `ConsumerUnit` para evitar cadastro duplicado
+      da mesma UC pelo mesmo usuário.
 - [ ] `app/api/consumer-units/route.ts` (GET lista do usuário logado,
       POST cria) e `app/api/consumer-units/[unitId]/route.ts`
       (GET/PATCH/DELETE).
@@ -143,6 +146,10 @@ negócio — esta fase é só CRUD.
 Bill { id, consumerUnitId -> ConsumerUnit, referenceMonth, fileUrl,
        status ("pending"|"processing"|"done"|"error"), createdAt }
 ```
+`referenceMonth` é `DateTime`, sempre normalizado para o primeiro dia do
+mês (ex: `2026-03-01`) — facilita agrupar e comparar meses entre UCs nas
+fases seguintes (histórico, calibração, ranking).
+
 (campos de dados extraídos entram na Fase 3 — aqui só o essencial para
 existir o registro e o arquivo.)
 
@@ -152,7 +159,9 @@ existir o registro e o arquivo.)
       `referenceMonth` + arquivo (PDF/imagem), sobe para o Vercel Blob,
       cria o `Bill` com status `pending`.
 - [ ] Validação de tipo/tamanho de arquivo (aceitar PDF, JPG, PNG; limite
-      de tamanho razoável, ex. 15MB).
+      de 20MB no arquivo original — a API de extração da Fase 3 aceita
+      documentos em base64 até 32MB por request, e base64 aumenta o
+      tamanho em ~33%, então 20MB de original deixa margem segura).
 - [ ] Tela `app/(dashboard)/units/[unitId]/bills/page.tsx` (lista de
       faturas da UC) e um componente de upload (drag-and-drop ou input).
 - [ ] Ao criar o `Bill`, disparar a chamada para a rota de processamento
@@ -181,22 +190,40 @@ Bill {
   totalAmount, consumptionKwh, tariffFlag,
   previousReadingKwh, currentReadingKwh, billingDays,
   appliedKwhRate,
-  lineItems      Json   -- [{ description, quantity, unitRate, amount }]
-  extractedData  Json   -- resposta bruta do Claude, para auditoria
+  lineItems      Json    -- [{ description, quantity, unitRate, amount }]
+  extractedData  Json    -- resposta bruta do Claude, para auditoria
+  errorMessage   String? -- preenchido quando status = "error"
 }
 ```
 
 **Tarefas**
-- [ ] `lib/claude.ts`: função `extractBillData(fileUrl): Promise<ExtractedBill>`
-      que envia o arquivo (via URL do Blob ou base64) para a API da
-      Anthropic com um prompt de extração e um schema JSON fixo (usar
-      tool use / structured output para forçar o formato).
-- [ ] Definir o schema Zod de `ExtractedBill` espelhando os campos acima;
-      usar o mesmo schema para validar a resposta do Claude.
-- [ ] `app/api/bills/[billId]/process/route.ts`: busca o `Bill`, chama
-      `extractBillData`, valida com Zod, salva os campos e muda status
-      para `done`; em caso de falha de extração ou validação, status
-      `error` e mensagem salva (campo `errorMessage` em `Bill`).
+- [ ] `lib/claude.ts`: função `extractBillData(fileBuffer, mimeType): Promise<ExtractedBill>`
+      que baixa o arquivo do Vercel Blob no servidor e envia como
+      conteúdo `base64` (content block `type: "document"` para PDF,
+      `type: "image"` para JPG/PNG). **A API da Anthropic não aceita uma
+      URL pública arbitrária como fonte de documento** — só base64
+      inline ou upload prévio via Files API (útil apenas se o mesmo
+      arquivo for reprocessado várias vezes, o que não é o caso aqui).
+      Usar **Structured Outputs** (`output_config: { format: { type:
+      "json_schema", schema: ... } }`, idealmente via
+      `client.messages.parse()`) para forçar a resposta no schema de
+      `ExtractedBill` — não usar tool use forçado para isso.
+- [ ] Modelo recomendado: `claude-opus-5`. Trocar por um modelo mais
+      econômico (ex: `claude-sonnet-5`) é uma decisão de custo/acurácia
+      do dono do produto a validar com as faturas de teste reais, não
+      algo a decidir a priori no código.
+- [ ] Respeitar os limites da API para documentos: até 32MB por request
+      já em base64 e até 600 páginas (bem acima do que uma fatura
+      normal usa) — ver o limite de upload da Fase 2, ajustado para
+      deixar margem.
+- [ ] Definir o schema Zod de `ExtractedBill` espelhando os campos
+      abaixo; o mesmo schema alimenta o `json_schema` do Structured
+      Outputs e valida a resposta antes de salvar.
+- [ ] `app/api/bills/[billId]/process/route.ts`: busca o `Bill`, marca
+      status `processing`, chama `extractBillData`, valida com Zod,
+      salva os campos e muda status para `done`; em caso de falha de
+      extração ou validação, status `error` e mensagem salva no campo
+      `errorMessage` (ver modelo de dados abaixo).
 - [ ] Tratar campos de baixa confiança: o prompt deve pedir ao Claude
       para retornar `null`/flag quando não tiver certeza, em vez de
       inventar valor — a UI da Fase 4 exibe esses campos como
@@ -349,7 +376,8 @@ sugestões (Fase 7).
 
 ## Fase 7 — Motor de sugestões e acompanhamento
 
-**Depende de**: Fase 6.
+**Depende de**: Fases 4 e 6 (sugestões nascem de achados de fatura/leitura
+tanto quanto de achados de aparelhos/desperdício/ranking).
 
 **Modelo de dados**
 ```
@@ -419,7 +447,8 @@ SCOPE.md (evoluções futuras).
 
 ## Fase 9 — Notificações
 
-**Depende de**: Fase 3 (processamento) e Fase 7 (sugestões).
+**Depende de**: Fase 3 (processamento concluído), Fases 4 e 6 (achados de
+severidade alta) e Fase 7 (sugestões avaliadas).
 
 **Modelo de dados**
 ```
