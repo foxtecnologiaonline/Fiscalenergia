@@ -1,6 +1,12 @@
 # Fiscalenergia
 
-SaaS de fiscalização de consumo de energia elétrica: confere se os valores da fatura (kWh e R$) estão corretos, estima quanto cada aparelho/eletrodoméstico consome via uma varredura guiada por cômodo, identifica quem mais pesa na conta e sugere economias priorizadas por impacto financeiro.
+SaaS de fiscalização de consumo de energia elétrica. Responde a 5 perguntas do usuário:
+
+1. A fatura está certa? (bandeira, tarifa de kWh, taxas, matemática)
+2. A leitura de consumo está certa? (leitura anterior x atual x kWh faturado)
+3. Algum aparelho está gastando mais do que deveria? (defasado, sem manutenção, acima da referência)
+4. Há indício de desperdício, dispersão ou desvio de energia?
+5. O que fazer para economizar, e funcionou? (sugestões com acompanhamento na fatura seguinte)
 
 Público: empresas (com uma ou várias unidades consumidoras) e consumidores finais.
 

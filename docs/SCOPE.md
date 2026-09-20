@@ -7,18 +7,37 @@
 ## 1. Visão do produto
 
 SaaS de **fiscalização de consumo de energia elétrica**. A partir da fatura
-e de um cadastro guiado dos aparelhos da casa/empresa, o app:
+e de um cadastro guiado dos aparelhos da casa/empresa, o app responde a
+cinco perguntas do usuário:
 
-1. Confere se os valores da fatura (kWh e R$) estão corretos.
-2. Estima **quanto cada aparelho/eletrodoméstico consome**, mostrando quem
-   mais pesa na conta.
-3. Faz uma **varredura completa dos gastos** (cômodo por cômodo) para
-   mapear todo o consumo da unidade.
-4. Dá **sugestões de economia** priorizadas pelo maior impacto financeiro.
+1. **A fatura está certa?** — bandeira tarifária do período, valor do kWh
+   aplicado, taxas/encargos e a matemática (quantidade × tarifa = valor)
+   conferem com o que deveria ser cobrado.
+2. **A leitura de consumo está certa?** — a diferença entre leitura atual e
+   anterior do medidor bate com o kWh faturado.
+3. **Algum aparelho está gastando mais do que deveria?** — por estar
+   defasado, sem manutenção, ou consumindo acima do valor de referência
+   (Inmetro/Procel/Procon) para aquele modelo/categoria.
+4. **Há indício de desperdício, dispersão ou desvio de energia?** — consumo
+   medido que não se explica pela soma dos aparelhos cadastrados nem por
+   mudança de hábito, mês após mês.
+5. **O que fazer, e funcionou?** — sugestões de economia priorizadas por
+   impacto em R$; o usuário marca o que aplicou e o app acompanha a fatura
+   seguinte para mostrar a economia real obtida.
 
-As duas frentes são complementares: a fatura dá o número real (kWh e R$
-faturados) e serve para **calibrar** as estimativas por aparelho; o
-cadastro de aparelhos explica **onde** esse consumo está sendo gerado.
+As duas frentes de dados (fatura + varredura de aparelhos) são
+complementares: a fatura dá o número real (kWh e R$ faturados) e serve
+para calibrar as estimativas por aparelho; o cadastro de aparelhos explica
+onde esse consumo está sendo gerado.
+
+> **Importante sobre os pontos 3 e 4**: o app não tem como medir cada
+> aparelho individualmente no MVP (não há hardware/IoT), nem acessar dados
+> internos da distribuidora. Por isso essas duas análises são heurísticas
+> baseadas em comparação estatística e em tabelas de referência — o
+> resultado é sempre apresentado como **indício/alerta que sugere
+> verificação**, nunca como diagnóstico definitivo ou acusação (ex: nunca
+> afirmar "há furto de energia", e sim "consumo não explicado pelos
+> aparelhos cadastrados — recomendamos inspeção da instalação").
 
 ## 2. Público-alvo
 
@@ -48,8 +67,9 @@ Uma conta (`User`) pode gerenciar N unidades consumidoras desde o MVP.
 existem dezenas de distribuidoras no Brasil, cada uma com layout de fatura
 diferente. Um LLM com visão lê o documento e devolve os campos já
 estruturados (JSON), sem precisar manter um template por distribuidora.
-O prompt de extração deve pedir um JSON com schema fixo e sinalizar campos
-que não conseguiu ler com confiança (para revisão manual do usuário).
+O prompt de extração precisa capturar não só os totais, mas os itens
+detalhados da fatura (ver seção 4) para permitir a conferência linha a
+linha, e sinalizar campos que não conseguiu ler com confiança.
 
 **Consumo por aparelho no MVP é estimado, não medido.** Não há
 integração com hardware (tomadas inteligentes/medidores IoT) na primeira
@@ -74,28 +94,57 @@ Bill (fatura)
   id, consumerUnitId -> ConsumerUnit
   referenceMonth, fileUrl (arquivo original no Blob),
   status ("pending" | "processing" | "done" | "error"),
-  extractedData (JSON: consumo kWh, valor total, bandeira tarifária,
-    tributos, demanda faturada, datas de leitura, etc.),
-  totalAmount, consumptionKwh,
+  -- dados gerais extraídos --
+  totalAmount, consumptionKwh, tariffFlag (bandeira cobrada),
+  -- para conferência da leitura (pergunta 2) --
+  previousReadingKwh, currentReadingKwh, billingDays,
+  -- para conferência da matemática/tarifa (pergunta 1) --
+  appliedKwhRate (R$/kWh cobrado na fatura),
+  lineItems (JSON: lista de itens da fatura — descrição, quantidade,
+    tarifa unitária, valor — ex: consumo TE, TUSD, bandeira, ICMS,
+    COSIP/iluminação pública, outros encargos),
+  extractedData (JSON bruto retornado pelo Claude, para auditoria/debug),
   createdAt
 
-Finding (achado — cobrança/consumo)
+TariffReference (tabela de referência mantida manualmente)
+  id, distributor, uf, tariffGroup, tariffSubgroup,
+  validFrom, validTo, kwhRate (TE+TUSD homologada), icmsRate
+
+TariffFlagHistory (bandeira tarifária vigente por mês, tabela ANEEL)
+  id, referenceMonth, flag ("verde" | "amarela" | "vermelha_p1" | "vermelha_p2")
+
+Finding (achado — cobrança, leitura ou consumo)
   id, consumerUnitId -> ConsumerUnit, billId? -> Bill
-  type ("billing_error" | "savings_opportunity" | "consumption_anomaly")
-  source ("bill_rule" | "appliance_rule")
+  type ("billing_error" | "reading_error" | "appliance_inefficiency"
+        | "possible_waste_or_loss" | "consumption_anomaly")
   ruleCode, severity ("low" | "medium" | "high"),
-  description, estimatedSavingsAmount?,
+  description, estimatedImpactAmount?,
   createdAt
 
 ApplianceCatalog (catálogo de referência, global — seed inicial da Fiscalenergia)
-  id, name, category, room (ver lista de cômodos abaixo),
+  id, name, category, room,
   typicalPowerW, typicalUsageHoursPerDay, typicalUsageDaysPerWeek,
+  referenceKwhMonth (consumo mensal de referência para um aparelho em bom
+    estado — baseado em selo Procel/Inmetro ou testes comparativos
+    publicados, ex: Procon-SP),
   notes (ex: "consumo cíclico, não é potência contínua")
 
 HouseholdAppliance (aparelho cadastrado pelo usuário numa UC)
   id, consumerUnitId -> ConsumerUnit, catalogId? -> ApplianceCatalog
   name, room, powerW, usageHoursPerDay, usageDaysPerWeek, quantity,
+  ageYears?, lastMaintenanceAt?, condition ("novo" | "normal" | "antigo" | "sem_manutencao"),
   isCustom (true quando não veio do catálogo / usuário editou os valores)
+
+Suggestion (sugestão de economia, com acompanhamento)
+  id, consumerUnitId -> ConsumerUnit, findingId? -> Finding,
+  householdApplianceId? -> HouseholdAppliance,
+  title, description,
+  estimatedSavingsKwh, estimatedSavingsAmount,
+  status ("suggested" | "applied" | "dismissed"),
+  appliedAt?, appliedNote? (o que o usuário efetivamente fez),
+  baselineBillId? -> Bill (última fatura antes da ação),
+  followUpBillId? -> Bill (primeira fatura após a ação),
+  actualSavingsKwh?, actualSavingsAmount?, evaluatedAt?
 
 Notification
   id, userId -> User, billId? -> Bill,
@@ -106,9 +155,7 @@ Notification
 
 Cozinha, Sala, Quarto (repetível por quantidade de quartos), Banheiro,
 Área de serviço/Lavanderia, Escritório/Home office, Área externa/Garagem.
-Cada cômodo tem uma lista pré-filtrada do `ApplianceCatalog` (ex: Cozinha
-sugere geladeira, freezer, micro-ondas, forno elétrico; Área de serviço
-sugere máquina de lavar, ferro de passar, bomba d'água).
+Cada cômodo tem uma lista pré-filtrada do `ApplianceCatalog`.
 
 ### Cálculo de consumo estimado por aparelho
 
@@ -119,55 +166,96 @@ consumoMensalEstimadoKwh =
 ```
 
 A soma do consumo estimado de todos os aparelhos de uma UC é comparada ao
-`consumptionKwh` real da fatura do mesmo mês (**calibração**):
-
-- Se a soma estimada ficar muito abaixo do valor real, o app sinaliza
-  "consumo não identificado" (aparelhos não cadastrados) e sugere revisar
-  a varredura.
-- Se ficar muito acima, sinaliza que algum tempo de uso informado está
-  superestimado.
-- O ranking "quem mais consome" é sempre relativo (% do total), o que
-  reduz o impacto de erro absoluto na potência/tempo informado.
+`consumptionKwh` real da fatura do mesmo mês (**calibração**) — a base do
+ranking "quem mais consome" e também da regra de possível desperdício
+(seção 5.4).
 
 ## 5. Motores de análise
 
-### 5.1 Regras sobre a fatura (MVP)
+### 5.1 Conferência da fatura — "a fatura está certa?"
 
-1. **Bandeira tarifária incorreta** — bandeira cobrada na fatura ≠ bandeira
-   vigente no mês de referência (tabela oficial ANEEL, mantida manualmente
-   ou atualizada por script mensal).
-2. **Anomalia de consumo total** — consumo do mês foge do padrão histórico
-   do cliente (variação acima de um limite configurável).
-3. **Tributo fora da faixa esperada** — alíquota de ICMS aplicada
-   incompatível com a alíquota vigente para energia elétrica no estado
-   (UF) da UC (tabela por UF).
-4. **Ultrapassagem de demanda (grupo A)** — demanda medida muito acima da
-   contratada (multa de ultrapassagem) ou demanda contratada muito acima
-   do uso real (oportunidade de reduzir o contrato).
-5. **Cobrança indevida de item legado** — itens que não deveriam mais
-   constar na fatura de energia.
+1. **Bandeira tarifária incorreta** — bandeira cobrada (`Bill.tariffFlag`)
+   ≠ bandeira vigente no mês de referência (`TariffFlagHistory`).
+2. **Tarifa de kWh incorreta** — `Bill.appliedKwhRate` ≠ tarifa homologada
+   vigente para a distribuidora/grupo/subgrupo da UC naquele período
+   (`TariffReference`).
+3. **Taxas/encargos fora do esperado** — itens de `lineItems` como ICMS,
+   COSIP/iluminação pública ou "outros encargos" fora da faixa/valor
+   esperado para a UF e o período.
+4. **Erro de matemática na fatura** — para cada item de `lineItems`,
+   recalcular `quantidade × tarifa unitária` e comparar com o valor
+   cobrado (tolerância de arredondamento); sinalizar qualquer item que não
+   feche a conta.
 
-### 5.2 Regras sobre aparelhos/varredura (MVP)
+### 5.2 Conferência da leitura de consumo — "a leitura está certa?"
 
-6. **Maior consumidor da casa** — ranking dos aparelhos por % do consumo
-   total estimado; sempre gera ao menos um achado destacando o top 1-3.
-7. **Aparelho com uso acima do padrão** — comparação do `usageHoursPerDay`
-   informado contra o `typicalUsageHoursPerDay` do catálogo (ex: chuveiro
-   elétrico usado muito mais tempo que a média).
-8. **Categoria de alto impacto conhecida** — aparelhos com potência alta e
-   uso comum em horário de ponta (chuveiro elétrico, ar-condicionado, ferro
-   de passar) recebem sugestão específica de mudança de hábito/horário.
-9. **Consumo não identificado** — gap entre soma estimada dos aparelhos e
-   consumo real da fatura acima de um limiar, sugerindo completar a
-   varredura.
+5. **Divergência de leitura do medidor** — recalcular
+   `currentReadingKwh − previousReadingKwh` e comparar com
+   `consumptionKwh` faturado; sinalizar divergência (possível erro de
+   leitura, leitura estimada pela distribuidora, ou constante de medição
+   incorreta).
+6. **Período de faturamento atípico** — `billingDays` muito diferente do
+   padrão (ex: 28-32 dias); ajustar comparações históricas
+   proporcionalmente e alertar quando o período for muito fora do comum.
+7. **Anomalia de consumo total** — consumo do mês foge do padrão histórico
+   da UC (variação acima de um limite configurável).
 
-### 5.3 Fase 2 (pós-MVP)
+### 5.3 Eficiência e manutenção de aparelhos — "algum aparelho gasta mais do que deveria?"
 
-10. Recomendação de troca de modalidade tarifária (Branca × Convencional).
-11. Simulação de migração para o Mercado Livre de Energia (ACL).
-12. Multa por baixo fator de potência (energia reativa).
-13. Substituição de equipamento ineficiente com estimativa de payback
-    (ex: "trocar geladeira de 15 anos economiza R$X/mês").
+8. **Consumo acima da referência** — consumo estimado do aparelho
+   (`HouseholdAppliance`) muito acima do `referenceKwhMonth` do
+   `ApplianceCatalog` para a mesma categoria/potência, ajustado por
+   `ageYears`/`condition` — sinaliza "esse aparelho está gastando mais do
+   que o esperado para o modelo/categoria, considere manutenção".
+9. **Aparelho defasado/sem manutenção declarado** — `condition` =
+   "antigo" ou "sem_manutencao" combinado com alto consumo estimado →
+   prioriza a sugestão de manutenção/substituição no topo do ranking.
+10. **Uso acima do padrão** — `usageHoursPerDay` informado muito acima do
+    `typicalUsageHoursPerDay` do catálogo (ex: chuveiro elétrico usado
+    muito mais tempo que a média).
+
+### 5.4 Indícios de desperdício, dispersão ou desvio — "tem vazamento/roubo de energia?"
+
+> Estas regras produzem **alertas de investigação**, não conclusões. A
+> UI deve deixar explícito que é um indício estatístico.
+
+11. **Consumo não identificado persistente** — gap entre a soma estimada
+    dos aparelhos e o consumo real da fatura (seção 4) acima de um
+    limiar, repetindo-se por vários meses sem explicação por aparelho
+    novo/mudança de hábito → alerta "consumo não explicado pelos
+    aparelhos cadastrados — verifique instalação elétrica ou revise a
+    varredura".
+12. **Salto de consumo sem causa aparente** — aumento súbito de consumo
+    sem novo aparelho cadastrado, mudança de `usageHoursPerDay`, ou
+    variação sazonal esperada (ex: verão/ar-condicionado) → alerta
+    "aumento de consumo sem causa identificada — recomendamos inspeção da
+    instalação e conferência com a distribuidora".
+
+### 5.5 Ranking de aparelhos
+
+13. **Maior consumidor da casa** — ranking dos aparelhos por % do consumo
+    total estimado; sempre gera ao menos um achado destacando o top 1-3.
+
+### 5.6 Sugestões de economia e acompanhamento — "o que fazer, e funcionou?"
+
+- Cada achado relevante (5.1 a 5.5) pode gerar uma ou mais `Suggestion`
+  com estimativa de economia em kWh e R$/mês.
+- O usuário marca uma sugestão como **aplicada**, descrevendo o que fez
+  (`appliedNote`); o sistema registra a fatura mais recente daquela UC
+  como `baselineBillId`.
+- Quando a próxima fatura da mesma UC é processada (`followUpBillId`), o
+  sistema compara consumo/custo com o baseline e calcula
+  `actualSavingsKwh`/`actualSavingsAmount`, exibindo "economia estimada vs
+  economia real obtida".
+- Lista de sugestões é sempre ordenada por impacto financeiro estimado.
+
+### 5.7 Fase 2 (pós-MVP)
+
+14. Recomendação de troca de modalidade tarifária (Branca × Convencional).
+15. Simulação de migração para o Mercado Livre de Energia (ACL).
+16. Multa por baixo fator de potência (energia reativa).
+17. Payback de substituição de equipamento (ex: "trocar geladeira de 15
+    anos economiza R$X/mês, retorno do investimento em Y meses").
 
 ## 6. Fluxo do usuário (MVP)
 
@@ -176,20 +264,25 @@ A soma do consumo estimado de todos os aparelhos de uma UC é comparada ao
    grupo tarifário).
 3. **Varredura guiada por cômodo**: wizard percorre os cômodos padrão,
    usuário marca os aparelhos que tem (a partir do catálogo, com potência
-   típica pré-preenchida) e ajusta tempo de uso; pode pular e completar
-   depois.
+   típica pré-preenchida), ajusta tempo de uso e informa idade/estado de
+   manutenção quando souber; pode pular e completar depois.
 4. Upload de fatura (PDF ou foto) vinculada a uma UC.
-5. Processamento assíncrono: extração via Claude → validação básica →
-   execução das regras de fatura (5.1) → geração de `Finding`s.
-6. Cálculo/atualização do ranking de aparelhos e calibração contra o
-   consumo real da fatura → geração de `Finding`s de aparelhos (5.2).
+5. Processamento assíncrono: extração via Claude (incluindo itens
+   detalhados e leituras) → execução das regras 5.1 e 5.2 → geração de
+   `Finding`s.
+6. Cálculo/atualização do ranking de aparelhos, regras 5.3 e 5.4, e
+   geração de `Suggestion`s consolidadas (5.6), ordenadas por economia
+   estimada.
 7. Usuário visualiza a fatura processada: dados extraídos, achados de
-   cobrança, ranking "quem mais consome" e sugestões de economia
-   priorizadas por impacto em R$.
-8. Dashboard: consumo (kWh) e gasto (R$) histórico por UC, ranking de
+   fatura/leitura, ranking "quem mais consome", alertas de eficiência ou
+   possível desperdício, e sugestões priorizadas.
+8. Usuário marca sugestões como aplicadas; no upload da fatura seguinte,
+   vê a comparação "economia estimada vs real".
+9. Dashboard: consumo (kWh) e gasto (R$) histórico por UC, ranking de
    aparelhos, comparação entre UCs quando houver mais de uma.
-9. Notificação por e-mail quando o processamento termina ou quando há um
-   achado de severidade alta.
+10. Notificação por e-mail quando o processamento termina, quando há um
+    achado de severidade alta, ou quando uma sugestão aplicada já pode
+    ser avaliada (fatura seguinte chegou).
 
 ## 7. Fases de implementação
 
@@ -200,36 +293,43 @@ A soma do consumo estimado de todos os aparelhos de uma UC é comparada ao
 - **Fase 2 — Upload de fatura**: upload de PDF/foto para o Blob storage,
   criação do registro `Bill` com status `pending`.
 - **Fase 3 — Extração via Claude**: rota/job que envia o arquivo da fatura
-  para a API da Anthropic com um prompt de extração e schema JSON fixo,
-  salva `extractedData`, atualiza status para `done` ou `error`.
-- **Fase 4 — Motor de regras da fatura**: implementação das regras 1-5
-  (seção 5.1).
+  com um prompt de extração e schema JSON fixo (totais, leituras, itens
+  detalhados/`lineItems`), salva os dados e atualiza status para `done`
+  ou `error`.
+- **Fase 4 — Conferência da fatura e da leitura**: seed de
+  `TariffReference` e `TariffFlagHistory`, implementação das regras 1-7
+  (seções 5.1 e 5.2).
 - **Fase 5 — Catálogo de aparelhos e varredura**: seed do
-  `ApplianceCatalog` (lista inicial de ~40-60 aparelhos comuns agrupados
-  por cômodo), wizard de varredura, cálculo de consumo estimado e
-  calibração contra a fatura.
-- **Fase 6 — Motor de regras de aparelhos**: implementação das regras 6-9
-  (seção 5.2) e do motor de sugestões de economia consolidado (fatura +
-  aparelhos, ordenado por economia estimada).
-- **Fase 7 — Dashboard consolidado**: histórico de consumo/gasto por UC,
-  ranking de aparelhos, lista de achados e sugestões, comparação entre UCs.
-- **Fase 8 — Notificações**: e-mail transacional ao concluir processamento
-  e ao gerar achado de severidade alta.
-- **Fase 9 (futuro)** — ver seção 9.
+  `ApplianceCatalog` (com `referenceKwhMonth` por aparelho), wizard de
+  varredura, cálculo de consumo estimado e calibração contra a fatura.
+- **Fase 6 — Eficiência, desperdício e ranking**: regras 8-13 (seções
+  5.3, 5.4, 5.5).
+- **Fase 7 — Motor de sugestões e acompanhamento**: geração de
+  `Suggestion`s (5.6), fluxo de marcar como aplicada, comparação
+  automática na fatura seguinte.
+- **Fase 8 — Dashboard consolidado**: histórico de consumo/gasto por UC,
+  ranking de aparelhos, achados, sugestões e status de acompanhamento.
+- **Fase 9 — Notificações**: e-mail transacional nos eventos da seção 6.
+- **Fase 10 (futuro)** — ver seção 9.
 
-## 8. Critérios de aceite do MVP (fases 0-8)
+## 8. Critérios de aceite do MVP (fases 0-9)
 
 - Usuário se cadastra, faz login e cadastra pelo menos uma UC.
 - Usuário completa a varredura guiada de pelo menos um cômodo e vê o
   consumo estimado calculado automaticamente.
 - Usuário faz upload de uma fatura em PDF ou foto e, em poucos minutos,
-  vê os dados extraídos (consumo, valor, bandeira, tributos).
-- O sistema aplica as regras de fatura (5.1) e de aparelhos (5.2) quando
-  aplicável, exibindo achados em linguagem simples com economia estimada
-  quando houver.
+  vê os dados extraídos, incluindo leituras e itens detalhados.
+- O sistema confere bandeira, tarifa de kWh, taxas e matemática da fatura
+  (5.1), e a coerência da leitura de consumo (5.2), exibindo achados em
+  linguagem simples.
+- O sistema aponta aparelhos com consumo acima da referência ou
+  defasados/sem manutenção (5.3), e sinaliza — como indício, não
+  diagnóstico — possível desperdício ou consumo não explicado (5.4).
 - O usuário vê claramente **qual aparelho mais consome** (ranking em % e
-  em R$/mês estimado) e recebe ao menos uma sugestão de economia
-  acionável.
+  em R$/mês estimado).
+- O usuário recebe sugestões priorizadas por economia estimada, pode
+  marcar uma como aplicada, e na fatura seguinte vê a comparação entre
+  economia estimada e economia real.
 - O dashboard mostra a evolução de consumo (kWh) e gasto (R$) por UC ao
   longo dos meses.
 - Falhas de extração (fatura ilegível, campo não identificado) são
@@ -238,26 +338,37 @@ A soma do consumo estimado de todos os aparelhos de uma UC é comparada ao
 ## 9. Evoluções futuras (fora do MVP)
 
 - **Medição real via IoT**: integração com tomadas inteligentes e
-  medidores de energia (ex: protocolos comuns de smart plugs) para
-  substituir a estimativa por dado medido de verdade, aparelho a aparelho.
+  medidores de energia para substituir a estimativa por dado medido de
+  verdade, aparelho a aparelho — eliminaria boa parte da incerteza das
+  regras 8-12.
 - Multi-usuário por empresa (papéis/permissões).
 - Modalidade tarifária (Branca × Convencional) e simulação de Mercado
   Livre de Energia.
-- Exportação de relatórios (PDF) da varredura e dos achados.
-- Substituição de equipamento com cálculo de payback.
+- Exportação de relatórios (PDF) da varredura, achados e sugestões.
+- Payback de substituição de equipamento.
+- Canal para o usuário anexar laudo/visita técnica quando um alerta de
+  desperdício/desvio (5.4) for investigado, fechando o ciclo com o
+  resultado real da inspeção.
 
 ## 10. Pontos em aberto / decisões pendentes
 
-- **Fonte da tabela de bandeiras tarifárias mensais**: manter tabela manual
-  no banco (atualização mensal manual) no MVP; automatizar depois.
-- **Fonte da tabela de ICMS por UF para energia elétrica**: mesmo
-  tratamento — tabela mantida manualmente no MVP.
-- **Conteúdo inicial do `ApplianceCatalog`**: precisa de uma lista
-  validada de aparelhos comuns por cômodo com potência típica (W) e
-  padrão de uso (h/dia) — pode ser levantada com fontes públicas
-  (INMETRO/PROCEL) antes da fase 5.
+- **Fonte da tabela de bandeiras tarifárias mensais** (`TariffFlagHistory`):
+  manter tabela manual no banco (atualização mensal manual) no MVP;
+  automatizar depois.
+- **Fonte da tabela de tarifas homologadas por distribuidora/UF**
+  (`TariffReference`) e de ICMS por UF: mesmo tratamento — tabela mantida
+  manualmente no MVP, começando pelas distribuidoras/UFs dos primeiros
+  usuários.
+- **Conteúdo inicial do `ApplianceCatalog`**, incluindo `referenceKwhMonth`:
+  precisa de uma lista validada de aparelhos comuns por cômodo, com
+  potência típica (W), padrão de uso (h/dia) e consumo de referência —
+  pode ser levantada com fontes públicas (INMETRO/Procel/Procon) antes da
+  fase 5.
 - **Faturas de teste**: precisamos de exemplos reais (anonimizados) de
-  faturas de distribuidoras diferentes para validar o prompt de extração
-  antes da fase 3.
+  faturas de distribuidoras diferentes, incluindo casos com leituras e
+  itens detalhados, para validar o prompt de extração antes da fase 3.
+- **Texto legal dos alertas de desperdício/desvio (5.4)**: validar com
+  cuidado a linguagem usada (evitar qualquer afirmação de furto/fraude sem
+  prova), possivelmente com revisão jurídica antes do lançamento.
 - **Modelo de monetização** (assinatura, % da economia identificada, etc.)
   não afeta o escopo técnico do MVP e pode ser decidido em paralelo.
