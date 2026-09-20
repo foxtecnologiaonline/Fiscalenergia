@@ -286,31 +286,23 @@ ranking "quem mais consome" e também da regra de possível desperdício
 
 ## 7. Fases de implementação
 
-- **Fase 0 — Setup**: projeto Next.js + TypeScript, Prisma + Postgres,
-  Auth.js, deploy inicial na Vercel, CI básico (lint + typecheck + testes).
-- **Fase 1 — Contas e UCs**: cadastro/login de usuário, CRUD de `Company`
-  (opcional) e `ConsumerUnit`.
-- **Fase 2 — Upload de fatura**: upload de PDF/foto para o Blob storage,
-  criação do registro `Bill` com status `pending`.
-- **Fase 3 — Extração via Claude**: rota/job que envia o arquivo da fatura
-  com um prompt de extração e schema JSON fixo (totais, leituras, itens
-  detalhados/`lineItems`), salva os dados e atualiza status para `done`
-  ou `error`.
-- **Fase 4 — Conferência da fatura e da leitura**: seed de
-  `TariffReference` e `TariffFlagHistory`, implementação das regras 1-7
-  (seções 5.1 e 5.2).
-- **Fase 5 — Catálogo de aparelhos e varredura**: seed do
-  `ApplianceCatalog` (com `referenceKwhMonth` por aparelho), wizard de
-  varredura, cálculo de consumo estimado e calibração contra a fatura.
-- **Fase 6 — Eficiência, desperdício e ranking**: regras 8-13 (seções
-  5.3, 5.4, 5.5).
-- **Fase 7 — Motor de sugestões e acompanhamento**: geração de
-  `Suggestion`s (5.6), fluxo de marcar como aplicada, comparação
-  automática na fatura seguinte.
-- **Fase 8 — Dashboard consolidado**: histórico de consumo/gasto por UC,
-  ranking de aparelhos, achados, sugestões e status de acompanhamento.
-- **Fase 9 — Notificações**: e-mail transacional nos eventos da seção 6.
-- **Fase 10 (futuro)** — ver seção 9.
+Resumo — o detalhamento técnico de cada fase (schema exato, rotas,
+arquivos, critérios de aceite testáveis e o que fica explicitamente fora
+de escopo) está em [`docs/IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).
+Use esse documento para conduzir a implementação com o Claude Code, uma
+fase por vez.
+
+0. Setup do projeto (Next.js, Prisma/Postgres, Auth.js, deploy Vercel, CI)
+1. Contas, empresas e unidades consumidoras (UC) — CRUD
+2. Upload de fatura (Blob storage + registro `Bill`)
+3. Extração de dados via Claude (totais, leituras, itens detalhados)
+4. Conferência da fatura e da leitura (regras 1-7, seções 5.1 e 5.2)
+5. Catálogo de aparelhos e varredura guiada por cômodo
+6. Eficiência, desperdício e ranking (regras 8-13, seções 5.3-5.5)
+7. Motor de sugestões e acompanhamento (seção 5.6)
+8. Dashboard consolidado
+9. Notificações
+10. (futuro) — ver seção 9 deste documento
 
 ## 8. Critérios de aceite do MVP (fases 0-9)
 
