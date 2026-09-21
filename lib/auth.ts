@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 
 import { db } from "@/lib/db";
+import { loginSchema } from "@/lib/validations/auth";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -18,12 +19,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: {},
       },
       authorize: async (credentials) => {
-        const email = credentials?.email;
-        const password = credentials?.password;
-
-        if (typeof email !== "string" || typeof password !== "string") {
+        const parsed = loginSchema.safeParse(credentials);
+        if (!parsed.success) {
           return null;
         }
+        const { email, password } = parsed.data;
 
         const user = await db.user.findUnique({ where: { email } });
         if (!user) {

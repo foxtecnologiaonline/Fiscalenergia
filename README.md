@@ -43,7 +43,8 @@ Auth.js (credenciais e-mail/senha). Gerenciador de pacotes: pnpm.
 - `pnpm typecheck` — `tsc --noEmit`
 - `pnpm test` — Vitest + Testing Library
 - `pnpm build` — build de produção do Next.js
-- `pnpm db:migrate` / `pnpm db:seed` — migrations e seed do Prisma
+- `pnpm db:migrate` — cria/aplica migrations do Prisma em desenvolvimento
+- `pnpm db:generate` — regenera o Prisma Client
 
 ## CI
 
