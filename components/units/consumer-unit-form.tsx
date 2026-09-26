@@ -65,9 +65,13 @@ export function ConsumerUnitForm(props: ConsumerUnitFormProps) {
     setError(null);
     setIsSubmitting(true);
 
+    // contractedDemandKw must be sent as `null` (never `undefined`) when empty:
+    // JSON.stringify drops `undefined` keys, and Prisma treats a missing key as
+    // "leave the stored value untouched" — which would keep a stale demand value
+    // after switching a unit from group A back to group B.
     const payload = {
       ...values,
-      contractedDemandKw: demandInput.trim() === "" ? undefined : Number(demandInput),
+      contractedDemandKw: demandInput.trim() === "" ? null : Number(demandInput),
     };
 
     const endpoint =
@@ -86,7 +90,12 @@ export function ConsumerUnitForm(props: ConsumerUnitFormProps) {
 
     if (!response.ok) {
       const data = await response.json().catch(() => null);
-      setError(data?.error ?? "Não foi possível salvar a unidade consumidora");
+      const fieldMessage: string | undefined = data?.issues?.[0]?.message;
+      setError(
+        fieldMessage ??
+          data?.error ??
+          "Não foi possível salvar a unidade consumidora",
+      );
       return;
     }
 
@@ -203,7 +212,7 @@ export function ConsumerUnitForm(props: ConsumerUnitFormProps) {
           <Input
             id="contractedDemandKw"
             type="number"
-            min="0"
+            min="0.01"
             step="0.01"
             required
             value={demandInput}

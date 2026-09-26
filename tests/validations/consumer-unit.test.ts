@@ -21,6 +21,26 @@ describe("consumerUnitSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts an explicit null contractedDemandKw for group B", () => {
+    const result = consumerUnitSchema.safeParse({
+      ...baseInput,
+      tariffGroup: "B",
+      contractedDemandKw: null,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an explicit null contractedDemandKw for group A", () => {
+    const result = consumerUnitSchema.safeParse({
+      ...baseInput,
+      tariffGroup: "A",
+      contractedDemandKw: null,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("accepts a valid group A unit with contractedDemandKw", () => {
     const result = consumerUnitSchema.safeParse({
       ...baseInput,

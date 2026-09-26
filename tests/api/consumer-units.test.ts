@@ -204,13 +204,54 @@ describe("/api/consumer-units", () => {
     expect(stillExists).not.toBeNull();
   });
 
-  it("returns 404 for a non-existent unit id", async () => {
+  it("returns 404 for a non-existent unit id on GET, PATCH and DELETE", async () => {
     asUser(userAId);
-    const response = await getUnit(
+
+    const getResponse = await getUnit(
       new Request("http://localhost"),
       routeParams("does-not-exist"),
     );
-    expect(response.status).toBe(404);
+    expect(getResponse.status).toBe(404);
+
+    const patchResponse = await updateUnit(
+      jsonRequest(validPayload, "PATCH"),
+      routeParams("does-not-exist"),
+    );
+    expect(patchResponse.status).toBe(404);
+
+    const deleteResponse = await deleteUnit(
+      new Request("http://localhost"),
+      routeParams("does-not-exist"),
+    );
+    expect(deleteResponse.status).toBe(404);
+  });
+
+  it("clears contractedDemandKw when explicitly updated to null", async () => {
+    asUser(userAId);
+    const createResponse = await createUnit(
+      jsonRequest({
+        ...validPayload,
+        code: "UC-A2",
+        tariffGroup: "A",
+        contractedDemandKw: 150,
+      }),
+    );
+    const { unit } = await createResponse.json();
+    expect(unit.contractedDemandKw).toBe(150);
+
+    const updateResponse = await updateUnit(
+      jsonRequest(
+        { ...validPayload, code: "UC-A2", contractedDemandKw: null },
+        "PATCH",
+      ),
+      routeParams(unit.id),
+    );
+    expect(updateResponse.status).toBe(200);
+
+    const stored = await db.consumerUnit.findUnique({
+      where: { id: unit.id },
+    });
+    expect(stored?.contractedDemandKw).toBeNull();
   });
 
   it("allows the owner to fetch, update and delete their unit", async () => {

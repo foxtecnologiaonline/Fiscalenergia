@@ -40,11 +40,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   const { unitId } = await params;
-  const existing = await findOwnedUnit(unitId, userId);
-  if (!existing) {
-    return notFoundResponse();
-  }
-
   const body = await request.json().catch(() => null);
   const parsed = consumerUnitSchema.safeParse(body);
 
@@ -56,10 +51,17 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   try {
-    const unit = await db.consumerUnit.update({
-      where: { id: unitId },
+    // Ownership is enforced inside the WHERE clause of the mutation itself
+    // (not via a separate check-then-act read) to avoid a race where the
+    // unit could be deleted or reassigned between the check and the update.
+    const { count } = await db.consumerUnit.updateMany({
+      where: { id: unitId, ownerId: userId },
       data: parsed.data,
     });
+    if (count === 0) {
+      return notFoundResponse();
+    }
+    const unit = await db.consumerUnit.findUnique({ where: { id: unitId } });
     return NextResponse.json({ unit });
   } catch (error) {
     if (
@@ -82,12 +84,12 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   }
 
   const { unitId } = await params;
-  const existing = await findOwnedUnit(unitId, userId);
-  if (!existing) {
+  const { count } = await db.consumerUnit.deleteMany({
+    where: { id: unitId, ownerId: userId },
+  });
+  if (count === 0) {
     return notFoundResponse();
   }
-
-  await db.consumerUnit.delete({ where: { id: unitId } });
 
   return new NextResponse(null, { status: 204 });
 }
