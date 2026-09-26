@@ -20,7 +20,12 @@ export default async function Home() {
             Você está logado como{" "}
             <span className="font-medium">{session.user.email}</span>.
           </p>
-          <LogoutButton />
+          <div className="flex gap-4">
+            <Button asChild>
+              <Link href="/units">Minhas unidades consumidoras</Link>
+            </Button>
+            <LogoutButton />
+          </div>
         </div>
       ) : (
         <div className="flex gap-4">

@@ -7,10 +7,50 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TariffGroup {
+  A
+  B
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
   name         String?
   passwordHash String
   createdAt    DateTime @default(now())
+
+  companies     Company[]
+  consumerUnits ConsumerUnit[]
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  cnpj      String
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  consumerUnits ConsumerUnit[]
+}
+
+model ConsumerUnit {
+  id                 String      @id @default(cuid())
+  ownerId            String
+  owner              User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  companyId          String?
+  company            Company?    @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  code               String
+  distributor        String
+  uf                 String
+  city               String
+  tariffGroup        TariffGroup
+  tariffSubgroup     String
+  tariffModality     String
+  contractedDemandKw Float?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@unique([ownerId, code])
 }
