@@ -12,6 +12,13 @@ enum TariffGroup {
   B
 }
 
+enum BillStatus {
+  pending
+  processing
+  done
+  error
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -52,5 +59,19 @@ model ConsumerUnit {
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
+  bills Bill[]
+
   @@unique([ownerId, code])
+}
+
+model Bill {
+  id             String       @id @default(cuid())
+  consumerUnitId String
+  consumerUnit   ConsumerUnit @relation(fields: [consumerUnitId], references: [id], onDelete: Cascade)
+  referenceMonth DateTime
+  fileUrl        String
+  status         BillStatus   @default(pending)
+  createdAt      DateTime     @default(now())
+
+  @@index([consumerUnitId])
 }

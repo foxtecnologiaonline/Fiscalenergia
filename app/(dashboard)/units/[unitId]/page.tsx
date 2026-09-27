@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { Button } from "@/components/ui/button";
 import { ConsumerUnitForm } from "@/components/units/consumer-unit-form";
 import { DeleteConsumerUnitButton } from "@/components/units/delete-consumer-unit-button";
 
@@ -42,6 +44,12 @@ export default async function ConsumerUnitDetailPage({
           contractedDemandKw: unit.contractedDemandKw,
         }}
       />
+
+      <div className="mt-6 border-t pt-6">
+        <Button asChild variant="outline" className="w-full">
+          <Link href={`/units/${unit.id}/bills`}>Ver faturas</Link>
+        </Button>
+      </div>
     </div>
   );
 }
