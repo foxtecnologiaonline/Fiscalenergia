@@ -19,6 +19,13 @@ enum BillStatus {
   error
 }
 
+enum TariffFlag {
+  verde
+  amarela
+  vermelha_p1
+  vermelha_p2
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -72,6 +79,20 @@ model Bill {
   fileUrl        String
   status         BillStatus   @default(pending)
   createdAt      DateTime     @default(now())
+
+  // Preenchidos pela extração da Fase 3 (lib/claude.ts); nulos até o
+  // processamento terminar, e campos individuais continuam nulos quando o
+  // Claude não teve confiança para extrair aquele valor.
+  totalAmount        Float?
+  consumptionKwh     Float?
+  tariffFlag         TariffFlag?
+  previousReadingKwh Float?
+  currentReadingKwh  Float?
+  billingDays        Int?
+  appliedKwhRate     Float?
+  lineItems          Json?
+  extractedData      Json?
+  errorMessage       String?
 
   @@index([consumerUnitId])
 }

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { scheduleBackgroundTask } from "@/lib/background-task";
 import { uploadBillFile } from "@/lib/blob";
 import { db } from "@/lib/db";
+import { processBill } from "@/lib/process-bill";
 import { requireUserId } from "@/lib/session";
 import {
   MAX_BILL_FILE_SIZE_BYTES,
@@ -78,6 +80,8 @@ export async function POST(request: Request) {
       status: "pending",
     },
   });
+
+  scheduleBackgroundTask(() => processBill(bill.id));
 
   return NextResponse.json({ bill }, { status: 201 });
 }

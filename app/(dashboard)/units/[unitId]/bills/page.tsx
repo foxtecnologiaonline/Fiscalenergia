@@ -66,7 +66,12 @@ export default async function ConsumerUnitBillsPage({
               {bills.map((bill) => (
                 <tr key={bill.id} className="border-t">
                   <td className="px-4 py-2">
-                    {formatReferenceMonth(bill.referenceMonth)}
+                    <Link
+                      href={`/units/${unit.id}/bills/${bill.id}`}
+                      className="font-medium underline underline-offset-4"
+                    >
+                      {formatReferenceMonth(bill.referenceMonth)}
+                    </Link>
                   </td>
                   <td className="px-4 py-2">{STATUS_LABELS[bill.status]}</td>
                 </tr>

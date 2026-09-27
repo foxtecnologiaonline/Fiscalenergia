@@ -4,9 +4,10 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { MAX_BILL_FILE_SIZE_BYTES } from "@/lib/validations/bill";
 
-const { mockAuth, mockUploadBillFile } = vi.hoisted(() => ({
+const { mockAuth, mockUploadBillFile, mockProcessBill } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockUploadBillFile: vi.fn(),
+  mockProcessBill: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -15,6 +16,10 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/blob", () => ({
   uploadBillFile: mockUploadBillFile,
+}));
+
+vi.mock("@/lib/process-bill", () => ({
+  processBill: mockProcessBill,
 }));
 
 import { POST as createBill } from "@/app/api/bills/route";
@@ -58,12 +63,14 @@ describe("POST /api/bills", () => {
   beforeEach(async () => {
     mockAuth.mockReset();
     mockUploadBillFile.mockReset();
+    mockProcessBill.mockReset();
     mockUploadBillFile.mockResolvedValue(
       "https://blob.example.com/fake-bill-url",
     );
+    mockProcessBill.mockResolvedValue(null);
 
-    await db.bill.deleteMany({});
-    await db.consumerUnit.deleteMany({});
+    // Scoped to this file's own users (cascades to their units/bills) so
+    // parallel test files never wipe each other's fixtures.
     await db.user.deleteMany({
       where: { email: { contains: TEST_EMAIL_MARKER } },
     });
@@ -99,8 +106,6 @@ describe("POST /api/bills", () => {
   });
 
   afterAll(async () => {
-    await db.bill.deleteMany({});
-    await db.consumerUnit.deleteMany({});
     await db.user.deleteMany({
       where: { email: { contains: TEST_EMAIL_MARKER } },
     });
@@ -218,6 +223,20 @@ describe("POST /api/bills", () => {
 
     const stored = await db.bill.findUnique({ where: { id: bill.id } });
     expect(stored?.consumerUnitId).toBe(unitAId);
+  });
+
+  it("triggers processing for the newly created bill", async () => {
+    asUser(userAId);
+    const response = await createBill(
+      billFormData({
+        consumerUnitId: unitAId,
+        referenceMonth: "2026-03",
+        file: pdfFile(),
+      }),
+    );
+
+    const { bill } = await response.json();
+    expect(mockProcessBill).toHaveBeenCalledWith(bill.id);
   });
 
   it("returns 502 when the blob upload fails", async () => {

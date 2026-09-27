@@ -52,7 +52,9 @@ describe("/api/consumer-units", () => {
 
   beforeEach(async () => {
     mockAuth.mockReset();
-    await db.consumerUnit.deleteMany({});
+    // Deleting only this file's own users (never a blanket deleteMany on
+    // ConsumerUnit/Bill) avoids stomping on other test files' fixtures when
+    // suites run in parallel — cascade deletes take care of their units/bills.
     await db.user.deleteMany({
       where: { email: { contains: TEST_EMAIL_MARKER } },
     });
@@ -74,7 +76,6 @@ describe("/api/consumer-units", () => {
   });
 
   afterAll(async () => {
-    await db.consumerUnit.deleteMany({});
     await db.user.deleteMany({
       where: { email: { contains: TEST_EMAIL_MARKER } },
     });
