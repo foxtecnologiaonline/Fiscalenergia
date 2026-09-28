@@ -59,6 +59,11 @@ export default async function ConsumerUnitDetailPage({
             Consumo por aparelho
           </Link>
         </Button>
+        <Button asChild variant="outline" className="w-full">
+          <Link href={`/units/${unit.id}/suggestions`}>
+            Sugestões de economia
+          </Link>
+        </Button>
       </div>
     </div>
   );

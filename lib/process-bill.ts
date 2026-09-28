@@ -5,6 +5,8 @@ import { downloadBillFile } from "@/lib/blob";
 import { db } from "@/lib/db";
 import { applyApplianceRules } from "@/lib/rules/apply-appliance-rules";
 import { applyBillRules } from "@/lib/rules/apply-bill-rules";
+import { applySuggestions } from "@/lib/rules/apply-suggestions";
+import { evaluateAppliedSuggestions } from "@/lib/rules/evaluate-suggestions";
 import { isAcceptedBillFileType } from "@/lib/validations/bill";
 
 /**
@@ -67,6 +69,16 @@ export async function processBill(billId: string): Promise<Bill | null> {
       await applyApplianceRules(done.consumerUnitId);
     } catch (error) {
       console.error(`applyApplianceRules failed for bill ${billId}:`, error);
+    }
+
+    // Gera/atualiza as Suggestions a partir dos Findings recém-calculados
+    // acima, e avalia qualquer sugestão "em acompanhamento" (status
+    // applied, sem followUpBillId) contra esta fatura (5.6).
+    try {
+      await applySuggestions(done.consumerUnitId);
+      await evaluateAppliedSuggestions(done.consumerUnitId, done);
+    } catch (error) {
+      console.error(`applySuggestions/evaluateAppliedSuggestions failed for bill ${billId}:`, error);
     }
 
     return done;
