@@ -45,9 +45,14 @@ export default async function ConsumerUnitDetailPage({
         }}
       />
 
-      <div className="mt-6 border-t pt-6">
+      <div className="mt-6 flex flex-col gap-2 border-t pt-6">
         <Button asChild variant="outline" className="w-full">
           <Link href={`/units/${unit.id}/bills`}>Ver faturas</Link>
+        </Button>
+        <Button asChild variant="outline" className="w-full">
+          <Link href={`/units/${unit.id}/appliances`}>
+            Varredura de aparelhos
+          </Link>
         </Button>
       </div>
     </div>

@@ -40,6 +40,27 @@ enum FindingSeverity {
   high
 }
 
+// Cômodos padrão do questionário de varredura (ver docs/SCOPE.md). Fixo no
+// ApplianceCatalog (conteúdo mantido por nós); HouseholdAppliance usa String
+// livre para "room" para permitir instâncias repetidas (ex.: "Quarto 1",
+// "Quarto 2") quando a casa tem mais de um cômodo do mesmo tipo.
+enum Room {
+  cozinha
+  sala
+  quarto
+  banheiro
+  area_servico
+  escritorio
+  area_externa
+}
+
+enum ApplianceCondition {
+  novo
+  normal
+  antigo
+  sem_manutencao
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -80,8 +101,9 @@ model ConsumerUnit {
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
-  bills    Bill[]
-  findings Finding[]
+  bills               Bill[]
+  findings            Finding[]
+  householdAppliances HouseholdAppliance[]
 
   @@unique([ownerId, code])
 }
@@ -153,4 +175,46 @@ model Finding {
 
   @@index([consumerUnitId])
   @@index([billId])
+}
+
+// Catálogo de referência de aparelhos por cômodo, usado para pré-preencher o
+// assistente de varredura (Fase 5). Conteúdo mantido manualmente via
+// prisma/seed.ts — valores ILUSTRATIVOS, ver docs/SCOPE.md seção 10.
+model ApplianceCatalog {
+  id                      String @id @default(cuid())
+  name                    String
+  category                String
+  room                    Room
+  typicalPowerW           Float
+  typicalUsageHoursPerDay Float
+  typicalUsageDaysPerWeek Float
+  referenceKwhMonth       Float?
+  notes                   String?
+
+  householdAppliances HouseholdAppliance[]
+
+  @@unique([room, name])
+}
+
+model HouseholdAppliance {
+  id             String            @id @default(cuid())
+  consumerUnitId String
+  consumerUnit   ConsumerUnit      @relation(fields: [consumerUnitId], references: [id], onDelete: Cascade)
+  catalogId      String?
+  catalog        ApplianceCatalog? @relation(fields: [catalogId], references: [id], onDelete: SetNull)
+
+  name              String
+  room              String
+  powerW            Float
+  usageHoursPerDay  Float
+  usageDaysPerWeek  Float
+  quantity          Int                @default(1)
+  ageYears          Float?
+  lastMaintenanceAt DateTime?
+  condition         ApplianceCondition @default(normal)
+  isCustom          Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([consumerUnitId])
 }
