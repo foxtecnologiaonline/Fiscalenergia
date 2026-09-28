@@ -32,6 +32,7 @@ enum FindingType {
   appliance_inefficiency
   possible_waste_or_loss
   consumption_anomaly
+  top_consumer
 }
 
 enum FindingSeverity {

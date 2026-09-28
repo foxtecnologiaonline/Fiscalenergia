@@ -1,8 +1,21 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
+import { applyApplianceRules } from "@/lib/rules/apply-appliance-rules";
 import { requireUserId } from "@/lib/session";
 import { householdApplianceSchema } from "@/lib/validations/appliance";
+
+/**
+ * Best-effort: uma falha no motor de regras não deve impedir a operação de
+ * CRUD do aparelho em si (mesmo padrão de lib/process-bill.ts).
+ */
+async function recomputeApplianceRules(unitId: string) {
+  try {
+    await applyApplianceRules(unitId);
+  } catch (error) {
+    console.error(`applyApplianceRules failed for unit ${unitId}:`, error);
+  }
+}
 
 type RouteParams = { params: Promise<{ unitId: string }> };
 
@@ -70,6 +83,8 @@ export async function POST(request: Request, { params }: RouteParams) {
   const appliance = await db.householdAppliance.create({
     data: { ...parsed.data, consumerUnitId: unitId },
   });
+
+  await recomputeApplianceRules(unitId);
 
   return NextResponse.json({ appliance }, { status: 201 });
 }

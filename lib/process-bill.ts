@@ -3,6 +3,7 @@ import type { Bill } from "@prisma/client";
 import { extractBillData } from "@/lib/claude";
 import { downloadBillFile } from "@/lib/blob";
 import { db } from "@/lib/db";
+import { applyApplianceRules } from "@/lib/rules/apply-appliance-rules";
 import { applyBillRules } from "@/lib/rules/apply-bill-rules";
 import { isAcceptedBillFileType } from "@/lib/validations/bill";
 
@@ -57,6 +58,15 @@ export async function processBill(billId: string): Promise<Bill | null> {
       await applyBillRules(billId);
     } catch (error) {
       console.error(`applyBillRules failed for bill ${billId}:`, error);
+    }
+
+    // Também recalcula os achados derivados de aparelhos (regras 8-13):
+    // um consumo faturado novo pode mudar o gap de consumo não
+    // identificado (regra 11) e o salto sem causa aparente (regra 12).
+    try {
+      await applyApplianceRules(done.consumerUnitId);
+    } catch (error) {
+      console.error(`applyApplianceRules failed for bill ${billId}:`, error);
     }
 
     return done;

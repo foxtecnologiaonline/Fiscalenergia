@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
+import { applyApplianceRules } from "@/lib/rules/apply-appliance-rules";
 import { requireUserId } from "@/lib/session";
 import { householdAppliancePatchSchema } from "@/lib/validations/appliance";
 
@@ -8,6 +9,18 @@ type RouteParams = { params: Promise<{ unitId: string; applianceId: string }> };
 
 const notFoundResponse = () =>
   NextResponse.json({ error: "Aparelho não encontrado" }, { status: 404 });
+
+/**
+ * Best-effort: uma falha no motor de regras não deve impedir a operação de
+ * CRUD do aparelho em si (mesmo padrão de lib/process-bill.ts).
+ */
+async function recomputeApplianceRules(unitId: string) {
+  try {
+    await applyApplianceRules(unitId);
+  } catch (error) {
+    console.error(`applyApplianceRules failed for unit ${unitId}:`, error);
+  }
+}
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   const userId = await requireUserId();
@@ -52,6 +65,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return notFoundResponse();
   }
 
+  await recomputeApplianceRules(unitId);
+
   const appliance = await db.householdAppliance.findUnique({
     where: { id: applianceId },
   });
@@ -75,6 +90,8 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   if (count === 0) {
     return notFoundResponse();
   }
+
+  await recomputeApplianceRules(unitId);
 
   return new NextResponse(null, { status: 204 });
 }

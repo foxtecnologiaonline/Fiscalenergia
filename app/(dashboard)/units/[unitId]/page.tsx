@@ -54,6 +54,11 @@ export default async function ConsumerUnitDetailPage({
             Varredura de aparelhos
           </Link>
         </Button>
+        <Button asChild variant="outline" className="w-full">
+          <Link href={`/units/${unit.id}/consumption`}>
+            Consumo por aparelho
+          </Link>
+        </Button>
       </div>
     </div>
   );
