@@ -30,3 +30,10 @@ export const extractedBillSchema = z.object({
 
 export type ExtractedBill = z.infer<typeof extractedBillSchema>;
 export type LineItem = z.infer<typeof lineItemSchema>;
+
+// Bill.lineItems is a Json column — safely parse it back into LineItem[]
+// instead of casting, since nothing at the DB layer guarantees its shape.
+export function parseLineItems(value: unknown): LineItem[] {
+  const result = z.array(lineItemSchema).safeParse(value);
+  return result.success ? result.data : [];
+}

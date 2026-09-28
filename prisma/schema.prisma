@@ -26,6 +26,20 @@ enum TariffFlag {
   vermelha_p2
 }
 
+enum FindingType {
+  billing_error
+  reading_error
+  appliance_inefficiency
+  possible_waste_or_loss
+  consumption_anomaly
+}
+
+enum FindingSeverity {
+  low
+  medium
+  high
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -66,7 +80,8 @@ model ConsumerUnit {
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
-  bills Bill[]
+  bills    Bill[]
+  findings Finding[]
 
   @@unique([ownerId, code])
 }
@@ -94,5 +109,48 @@ model Bill {
   extractedData      Json?
   errorMessage       String?
 
+  findings Finding[]
+
   @@index([consumerUnitId])
+}
+
+// Tarifa homologada (TE+TUSD) e alíquota de ICMS por distribuidora/UF/grupo/
+// subgrupo, mantida manualmente no MVP (ver docs/SCOPE.md, seção 10).
+model TariffReference {
+  id             String      @id @default(cuid())
+  distributor    String
+  uf             String
+  tariffGroup    TariffGroup
+  tariffSubgroup String
+  validFrom      DateTime
+  validTo        DateTime?
+  kwhRate        Float
+  icmsRate       Float
+
+  @@unique([distributor, uf, tariffGroup, tariffSubgroup, validFrom])
+}
+
+// Bandeira tarifária vigente por mês (dado público ANEEL), mantida
+// manualmente no MVP (ver docs/SCOPE.md, seção 10).
+model TariffFlagHistory {
+  id             String     @id @default(cuid())
+  referenceMonth DateTime   @unique
+  flag           TariffFlag
+}
+
+model Finding {
+  id                    String          @id @default(cuid())
+  consumerUnitId        String
+  consumerUnit          ConsumerUnit    @relation(fields: [consumerUnitId], references: [id], onDelete: Cascade)
+  billId                String?
+  bill                  Bill?           @relation(fields: [billId], references: [id], onDelete: SetNull)
+  type                  FindingType
+  ruleCode              String
+  severity              FindingSeverity
+  description           String
+  estimatedImpactAmount Float?
+  createdAt             DateTime        @default(now())
+
+  @@index([consumerUnitId])
+  @@index([billId])
 }

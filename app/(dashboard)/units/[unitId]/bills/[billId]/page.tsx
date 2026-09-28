@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatReferenceMonth } from "@/lib/validations/bill";
-import { lineItemSchema } from "@/lib/validations/extracted-bill";
+import { parseLineItems } from "@/lib/validations/extracted-bill";
 
 const STATUS_LABELS = {
   pending: "Pendente",
@@ -19,6 +18,12 @@ const TARIFF_FLAG_LABELS = {
   amarela: "Amarela",
   vermelha_p1: "Vermelha - Patamar 1",
   vermelha_p2: "Vermelha - Patamar 2",
+} as const;
+
+const SEVERITY_LABELS = {
+  low: "Baixa",
+  medium: "Média",
+  high: "Alta",
 } as const;
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
@@ -62,8 +67,14 @@ export default async function BillDetailPage({
     notFound();
   }
 
-  const parsedLineItems = z.array(lineItemSchema).safeParse(bill.lineItems);
-  const lineItems = parsedLineItems.success ? parsedLineItems.data : [];
+  const lineItems = parseLineItems(bill.lineItems);
+  const findings =
+    bill.status === "done"
+      ? await db.finding.findMany({
+          where: { billId: bill.id },
+          orderBy: [{ severity: "desc" }, { createdAt: "asc" }],
+        })
+      : [];
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -183,6 +194,34 @@ export default async function BillDetailPage({
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
+
+          <div>
+            <h2 className="mb-2 text-lg font-semibold">
+              Conferência da fatura e da leitura
+            </h2>
+            {findings.length === 0 ? (
+              <p className="text-muted-foreground">
+                Nenhum achado identificado para esta fatura.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {findings.map((finding) => (
+                  <li key={finding.id} className="rounded-lg border p-4">
+                    <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                      Severidade {SEVERITY_LABELS[finding.severity]}
+                    </p>
+                    <p className="mt-1">{finding.description}</p>
+                    {finding.estimatedImpactAmount != null ? (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Impacto estimado:{" "}
+                        {formatCurrency(finding.estimatedImpactAmount)}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </>

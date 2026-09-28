@@ -3,6 +3,7 @@ import type { Bill } from "@prisma/client";
 import { extractBillData } from "@/lib/claude";
 import { downloadBillFile } from "@/lib/blob";
 import { db } from "@/lib/db";
+import { applyBillRules } from "@/lib/rules/apply-bill-rules";
 import { isAcceptedBillFileType } from "@/lib/validations/bill";
 
 /**
@@ -33,7 +34,7 @@ export async function processBill(billId: string): Promise<Bill | null> {
 
     const extracted = await extractBillData(buffer, contentType);
 
-    return await db.bill.update({
+    const done = await db.bill.update({
       where: { id: billId },
       data: {
         status: "done",
@@ -49,6 +50,16 @@ export async function processBill(billId: string): Promise<Bill | null> {
         errorMessage: null,
       },
     });
+
+    // Best-effort: the extraction itself already succeeded, so a bug in the
+    // rules engine shouldn't retroactively mark a readable bill as "error".
+    try {
+      await applyBillRules(billId);
+    } catch (error) {
+      console.error(`applyBillRules failed for bill ${billId}:`, error);
+    }
+
+    return done;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Falha desconhecida na extração";
