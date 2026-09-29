@@ -22,6 +22,9 @@ export default async function DashboardLayout({
         </Link>
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <span>{session.user.email}</span>
+          <Link href="/settings" className="underline underline-offset-4">
+            Configurações
+          </Link>
           <LogoutButton />
         </div>
       </header>

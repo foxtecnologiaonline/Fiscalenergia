@@ -71,15 +71,24 @@ enum SuggestionStatus {
   dismissed
 }
 
+// Só "email" existe no MVP (ver docs/IMPLEMENTATION_PLAN.md, Fase 9 —
+// "Fora de escopo: canais além de e-mail"); enum mesmo assim, para manter
+// o campo fechado e tipado quando push/SMS forem adicionados depois.
+enum NotificationChannel {
+  email
+}
+
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String?
-  passwordHash String
-  createdAt    DateTime @default(now())
+  id                        String   @id @default(cuid())
+  email                     String   @unique
+  name                      String?
+  passwordHash              String
+  emailNotificationsEnabled Boolean  @default(true)
+  createdAt                 DateTime @default(now())
 
   companies     Company[]
   consumerUnits ConsumerUnit[]
+  notifications Notification[]
 }
 
 model Company {
@@ -145,6 +154,7 @@ model Bill {
   findings               Finding[]
   suggestionsAsBaseline  Suggestion[] @relation("SuggestionBaselineBill")
   suggestionsAsFollowUp  Suggestion[] @relation("SuggestionFollowUpBill")
+  notifications          Notification[]
 
   @@index([consumerUnitId])
 }
@@ -285,4 +295,23 @@ model Suggestion {
   @@index([householdApplianceId])
   @@index([baselineBillId])
   @@index([followUpBillId])
+}
+
+// Registro de e-mails enviados (Fase 9, docs/SCOPE.md seção 6, passo 10):
+// processamento de fatura concluído, achado de severidade alta, e sugestão
+// aplicada avaliada. billId fica nulo apenas se a fatura de origem for
+// removida (não há rota de exclusão de fatura no MVP, mas SetNull evita
+// que a remoção de uma fatura apague o histórico de notificações).
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  billId    String?
+  bill      Bill?               @relation(fields: [billId], references: [id], onDelete: SetNull)
+  channel   NotificationChannel @default(email)
+  message   String
+  sentAt    DateTime            @default(now())
+
+  @@index([userId])
+  @@index([billId])
 }
