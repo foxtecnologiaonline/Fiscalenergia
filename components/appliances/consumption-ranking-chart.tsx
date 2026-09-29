@@ -53,7 +53,12 @@ export function ConsumptionRankingChart({ entries }: { entries: RankingEntry[] }
               "Consumo estimado",
             ]}
           />
-          <Bar dataKey="kwh" fill="var(--primary)" radius={[0, 4, 4, 0]} />
+          <Bar
+            dataKey="kwh"
+            fill="var(--chart-kwh)"
+            radius={[0, 4, 4, 0]}
+            barSize={24}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>

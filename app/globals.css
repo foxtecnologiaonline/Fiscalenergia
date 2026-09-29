@@ -24,6 +24,12 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  /* Paleta categórica validada (skill dataviz) para os gráficos de
+     histórico do dashboard (Fase 8): consumo (kWh) e gasto (R$) são
+     gráficos de série única separados (nunca eixo duplo), cada um com
+     sua própria cor fixa. */
+  --chart-kwh: #2a78d6;
+  --chart-spend: #eb6834;
 }
 
 .dark {
@@ -46,6 +52,8 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+  --chart-kwh: #3987e5;
+  --chart-spend: #d95926;
 }
 
 @theme inline {
@@ -70,6 +78,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-chart-kwh: var(--chart-kwh);
+  --color-chart-spend: var(--chart-spend);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
