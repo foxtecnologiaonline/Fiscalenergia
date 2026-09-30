@@ -226,4 +226,51 @@ describe("applyApplianceRules", () => {
       ),
     ).toBe(true);
   });
+
+  it("survives concurrent calls for the same UC without losing either appliance's data", async () => {
+    await db.householdAppliance.createMany({
+      data: [
+        {
+          consumerUnitId: unitId,
+          catalogId,
+          name: "Geladeira de teste",
+          room: "Cozinha",
+          powerW: 400,
+          usageHoursPerDay: 8,
+          usageDaysPerWeek: 7,
+          quantity: 1,
+          condition: "normal",
+          isCustom: false,
+        },
+        {
+          consumerUnitId: unitId,
+          name: "Ar-condicionado",
+          room: "Quarto 1",
+          powerW: 900,
+          usageHoursPerDay: 6,
+          usageDaysPerWeek: 7,
+          quantity: 1,
+          isCustom: true,
+        },
+      ],
+    });
+
+    // Duas chamadas concorrentes (simulando duas edições quase
+    // simultâneas na varredura) nunca devem lançar um erro não tratado
+    // (o retry em torno da falha de serialização precisa absorvê-lo) e o
+    // resultado final precisa refletir os DOIS aparelhos, nunca só um
+    // deles — o sintoma exato da condição de corrida original.
+    const [first, second] = await Promise.all([
+      applyApplianceRules(unitId),
+      applyApplianceRules(unitId),
+    ]);
+    expect(first.length).toBeGreaterThan(0);
+    expect(second.length).toBeGreaterThan(0);
+
+    const topConsumerFinding = await db.finding.findFirst({
+      where: { consumerUnitId: unitId, type: "top_consumer" },
+    });
+    expect(topConsumerFinding?.description).toContain("Geladeira de teste");
+    expect(topConsumerFinding?.description).toContain("Ar-condicionado");
+  });
 });

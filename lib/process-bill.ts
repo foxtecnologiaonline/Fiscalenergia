@@ -80,27 +80,42 @@ export async function processBill(billId: string): Promise<Bill | null> {
 
     // Gera/atualiza as Suggestions a partir dos Findings recém-calculados
     // acima, e avalia qualquer sugestão "em acompanhamento" (status
-    // applied, sem followUpBillId) contra esta fatura (5.6).
-    let evaluatedSuggestions: Awaited<ReturnType<typeof evaluateAppliedSuggestions>> = [];
+    // applied, sem followUpBillId) contra esta fatura (5.6). Cada etapa é
+    // independente: uma falha ao gerar sugestões não deve impedir a
+    // avaliação das que já estavam em acompanhamento.
     try {
       await applySuggestions(done.consumerUnitId);
+    } catch (error) {
+      console.error(`applySuggestions failed for bill ${billId}:`, error);
+    }
+    let evaluatedSuggestions: Awaited<ReturnType<typeof evaluateAppliedSuggestions>> = [];
+    try {
       evaluatedSuggestions = await evaluateAppliedSuggestions(done.consumerUnitId, done);
     } catch (error) {
-      console.error(`applySuggestions/evaluateAppliedSuggestions failed for bill ${billId}:`, error);
+      console.error(`evaluateAppliedSuggestions failed for bill ${billId}:`, error);
     }
 
     // Notificações por e-mail (Fase 9, docs/SCOPE.md seção 6, passo 10):
     // (a) processamento concluído, (b) achado de severidade alta,
-    // (c) sugestão aplicada avaliada — sempre best-effort.
+    // (c) sugestão aplicada avaliada — cada uma best-effort e independente
+    // das outras (uma falha em uma não deve impedir as demais de rodar).
     try {
       await notifyBillProcessed(done);
+    } catch (error) {
+      console.error(`notifyBillProcessed failed for bill ${billId}:`, error);
+    }
+    try {
       await notifyHighSeverityFindings(
         [...billFindings, ...applianceFindings],
         done,
       );
+    } catch (error) {
+      console.error(`notifyHighSeverityFindings failed for bill ${billId}:`, error);
+    }
+    try {
       await notifySuggestionsEvaluated(evaluatedSuggestions, done);
     } catch (error) {
-      console.error(`notifications failed for bill ${billId}:`, error);
+      console.error(`notifySuggestionsEvaluated failed for bill ${billId}:`, error);
     }
 
     return done;

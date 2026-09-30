@@ -143,6 +143,55 @@ describe("applySuggestions", () => {
     expect(secondRun[0].appliedNote).toBe("Liguei para a distribuidora");
   });
 
+  it("removes a pending (never-applied) suggestion once its finding no longer exists", async () => {
+    const finding = await db.finding.create({
+      data: {
+        consumerUnitId: unitId,
+        type: "billing_error",
+        ruleCode: "billing.kwh_rate_mismatch",
+        severity: "medium",
+        description: "A tarifa cobrada diverge da homologada.",
+        estimatedImpactAmount: 30,
+      },
+    });
+    const [created] = await applySuggestions(unitId);
+    expect(created.status).toBe("suggested");
+
+    // O achado que originou a sugestão não existe mais (ex.: aparelho
+    // corrigido, fatura reprocessada sem o erro) — a sugestão pendente
+    // correspondente deve sumir, já que não há status aplicado a
+    // preservar.
+    await db.finding.delete({ where: { id: finding.id } });
+
+    const afterCleanup = await applySuggestions(unitId);
+    expect(afterCleanup).toEqual([]);
+  });
+
+  it("never removes an already-applied suggestion even if its finding disappears", async () => {
+    const finding = await db.finding.create({
+      data: {
+        consumerUnitId: unitId,
+        type: "appliance_inefficiency",
+        ruleCode: "appliance.outdated_or_unmaintained",
+        severity: "medium",
+        description: "Geladeira (Cozinha) está marcada como antiga.",
+      },
+    });
+    const [created] = await applySuggestions(unitId);
+    await db.suggestion.update({
+      where: { id: created.id },
+      data: { status: "applied", appliedAt: new Date(), appliedNote: "Troquei" },
+    });
+
+    await db.finding.delete({ where: { id: finding.id } });
+
+    const afterCleanup = await applySuggestions(unitId);
+    expect(afterCleanup).toHaveLength(1);
+    expect(afterCleanup[0].id).toBe(created.id);
+    expect(afterCleanup[0].status).toBe("applied");
+    expect(afterCleanup[0].findingId).toBeNull();
+  });
+
   it("creates distinct suggestions for two different appliances triggering the same rule", async () => {
     await db.finding.createMany({
       data: [
