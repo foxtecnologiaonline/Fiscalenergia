@@ -2,7 +2,17 @@ import type { Bill, Finding, Suggestion } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
+import { buildSuggestion } from "@/lib/rules/suggestions";
 import { formatReferenceMonth } from "@/lib/validations/bill";
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 async function getUnitOwner(consumerUnitId: string) {
   const unit = await db.consumerUnit.findUniqueOrThrow({
@@ -35,7 +45,7 @@ async function notify(params: {
   await sendEmail({
     to: params.userEmail,
     subject: params.subject,
-    html: `<p>${params.message}</p>`,
+    html: `<p>${escapeHtml(params.message)}</p>`,
   });
 
   await db.notification.create({
@@ -68,17 +78,63 @@ export async function notifyBillProcessed(bill: Bill): Promise<void> {
   });
 }
 
-/** (b) Notifica quando um achado de severidade alta é gerado. */
+/**
+ * (b) Notifica quando um achado de severidade alta é gerado.
+ *
+ * Achados de fatura/leitura (billId != null) são fatos novos a cada
+ * fatura por construção (nunca recalculados), então sempre notificam.
+ * Achados derivados de aparelho (billId nulo) são recriados do zero a
+ * cada execução de applyApplianceRules (Fase 6), mesmo quando o problema
+ * já era conhecido — sem filtro, o mesmo aparelho antigo não corrigido
+ * geraria um e-mail todo mês, para sempre. `sinceDate` (capturado antes
+ * desta passagem de processamento começar) permite distinguir "achado
+ * novo" de "achado recorrente": a Suggestion correspondente (upsertada
+ * por lib/rules/apply-suggestions.ts, que nunca atualiza createdAt em um
+ * upsert) só tem `createdAt >= sinceDate` se foi criada agora.
+ */
 export async function notifyHighSeverityFindings(
   findings: Finding[],
   bill: Bill,
+  sinceDate: Date,
 ): Promise<void> {
   const highFindings = findings.filter((finding) => finding.severity === "high");
   if (highFindings.length === 0) return;
 
+  const newHighFindings: Finding[] = [];
+  for (const finding of highFindings) {
+    if (finding.billId != null) {
+      newHighFindings.push(finding);
+      continue;
+    }
+
+    const input = buildSuggestion(finding);
+    if (!input) {
+      // Achado de severidade alta sem ação mapeada (não deveria ocorrer
+      // na prática — ver ACTION_TITLES — mas por segurança notifica em
+      // vez de silenciar um achado real).
+      newHighFindings.push(finding);
+      continue;
+    }
+
+    const suggestion = await db.suggestion.findUnique({
+      where: {
+        consumerUnitId_ruleCode_title: {
+          consumerUnitId: finding.consumerUnitId,
+          ruleCode: input.ruleCode,
+          title: input.title,
+        },
+      },
+      select: { createdAt: true },
+    });
+    if (!suggestion || suggestion.createdAt >= sinceDate) {
+      newHighFindings.push(finding);
+    }
+  }
+  if (newHighFindings.length === 0) return;
+
   const unit = await getUnitOwner(bill.consumerUnitId);
   const monthLabel = formatReferenceMonth(bill.referenceMonth);
-  const message = `Identificamos ${highFindings.length} achado(s) de severidade alta na UC ${unit.code} (referente à fatura de ${monthLabel}): ${highFindings.map((f) => f.description).join(" ")}`;
+  const message = `Identificamos ${newHighFindings.length} achado(s) de severidade alta na UC ${unit.code} (referente à fatura de ${monthLabel}): ${newHighFindings.map((f) => f.description).join(" ")}`;
 
   await notify({
     userId: unit.owner.id,

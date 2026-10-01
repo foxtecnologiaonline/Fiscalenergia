@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
-import { applyApplianceRules } from "@/lib/rules/apply-appliance-rules";
-import { applySuggestions } from "@/lib/rules/apply-suggestions";
+import { recomputeApplianceFindingsAndSuggestions } from "@/lib/rules/recompute-appliance-findings";
 import { requireUserId } from "@/lib/session";
 import { householdAppliancePatchSchema } from "@/lib/validations/appliance";
 
@@ -10,30 +9,6 @@ type RouteParams = { params: Promise<{ unitId: string; applianceId: string }> };
 
 const notFoundResponse = () =>
   NextResponse.json({ error: "Aparelho não encontrado" }, { status: 404 });
-
-/**
- * Best-effort: uma falha no motor de regras não deve impedir a operação de
- * CRUD do aparelho em si (mesmo padrão de lib/process-bill.ts). As duas
- * chamadas são independentes (cada uma com seu próprio try/catch) para que
- * uma falha na primeira não impeça a segunda de rodar.
- */
-async function recomputeApplianceRules(unitId: string) {
-  try {
-    await applyApplianceRules(unitId);
-  } catch (error) {
-    console.error(`applyApplianceRules failed for unit ${unitId}:`, error);
-  }
-
-  // Gera/atualiza as Suggestions imediatamente a partir dos achados de
-  // aparelho recém-recalculados acima, em vez de só no próximo
-  // processamento de fatura (apply-suggestions.ts é idempotente e seguro
-  // para chamar a cada edição da varredura).
-  try {
-    await applySuggestions(unitId);
-  } catch (error) {
-    console.error(`applySuggestions failed for unit ${unitId}:`, error);
-  }
-}
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   const userId = await requireUserId();
@@ -78,7 +53,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return notFoundResponse();
   }
 
-  await recomputeApplianceRules(unitId);
+  await recomputeApplianceFindingsAndSuggestions(unitId);
 
   const appliance = await db.householdAppliance.findUnique({
     where: { id: applianceId },
@@ -104,7 +79,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     return notFoundResponse();
   }
 
-  await recomputeApplianceRules(unitId);
+  await recomputeApplianceFindingsAndSuggestions(unitId);
 
   return new NextResponse(null, { status: 204 });
 }

@@ -8,10 +8,9 @@ import {
   notifyHighSeverityFindings,
   notifySuggestionsEvaluated,
 } from "@/lib/notifications";
-import { applyApplianceRules } from "@/lib/rules/apply-appliance-rules";
 import { applyBillRules } from "@/lib/rules/apply-bill-rules";
-import { applySuggestions } from "@/lib/rules/apply-suggestions";
 import { evaluateAppliedSuggestions } from "@/lib/rules/evaluate-suggestions";
+import { recomputeApplianceFindingsAndSuggestions } from "@/lib/rules/recompute-appliance-findings";
 import { isAcceptedBillFileType } from "@/lib/validations/bill";
 
 /**
@@ -68,26 +67,32 @@ export async function processBill(billId: string): Promise<Bill | null> {
       console.error(`applyBillRules failed for bill ${billId}:`, error);
     }
 
-    // Também recalcula os achados derivados de aparelhos (regras 8-13):
-    // um consumo faturado novo pode mudar o gap de consumo não
-    // identificado (regra 11) e o salto sem causa aparente (regra 12).
-    let applianceFindings: Awaited<ReturnType<typeof applyApplianceRules>> = [];
+    // Também recalcula os achados derivados de aparelhos (regras 8-13) e
+    // regenera as Suggestions a partir deles: um consumo faturado novo
+    // pode mudar o gap de consumo não identificado (regra 11) e o salto
+    // sem causa aparente (regra 12). As duas etapas rodam com exclusão
+    // mútua por UC (lib/rules/recompute-appliance-findings.ts) para nunca
+    // se intercalar com uma edição de aparelho concorrente — sem isso, o
+    // delete+recreate de achados de uma chamada pode apagar o Finding que
+    // a outra acabou de referenciar em um upsert de Suggestion, violando a
+    // chave estrangeira. `suggestionsSinceDate` é capturado antes para
+    // permitir distinguir achado de aparelho novo de recorrente na
+    // notificação (b) logo abaixo.
+    const suggestionsSinceDate = new Date();
+    let applianceFindings: Awaited<
+      ReturnType<typeof recomputeApplianceFindingsAndSuggestions>
+    > = [];
     try {
-      applianceFindings = await applyApplianceRules(done.consumerUnitId);
+      applianceFindings = await recomputeApplianceFindingsAndSuggestions(
+        done.consumerUnitId,
+      );
     } catch (error) {
-      console.error(`applyApplianceRules failed for bill ${billId}:`, error);
+      console.error(
+        `recomputeApplianceFindingsAndSuggestions failed for bill ${billId}:`,
+        error,
+      );
     }
 
-    // Gera/atualiza as Suggestions a partir dos Findings recém-calculados
-    // acima, e avalia qualquer sugestão "em acompanhamento" (status
-    // applied, sem followUpBillId) contra esta fatura (5.6). Cada etapa é
-    // independente: uma falha ao gerar sugestões não deve impedir a
-    // avaliação das que já estavam em acompanhamento.
-    try {
-      await applySuggestions(done.consumerUnitId);
-    } catch (error) {
-      console.error(`applySuggestions failed for bill ${billId}:`, error);
-    }
     let evaluatedSuggestions: Awaited<ReturnType<typeof evaluateAppliedSuggestions>> = [];
     try {
       evaluatedSuggestions = await evaluateAppliedSuggestions(done.consumerUnitId, done);
@@ -108,6 +113,7 @@ export async function processBill(billId: string): Promise<Bill | null> {
       await notifyHighSeverityFindings(
         [...billFindings, ...applianceFindings],
         done,
+        suggestionsSinceDate,
       );
     } catch (error) {
       console.error(`notifyHighSeverityFindings failed for bill ${billId}:`, error);

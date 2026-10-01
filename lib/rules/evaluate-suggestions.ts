@@ -34,6 +34,14 @@ export async function evaluateAppliedSuggestions(
     const baselineBill = suggestion.baselineBill;
     if (!baselineBill) continue;
 
+    // Faturas podem ser enviadas fora de ordem (ex.: uma fatura antiga que
+    // faltava é processada depois de uma mais recente já ter servido de
+    // baseline). Só avalia contra uma fatura que realmente veio DEPOIS do
+    // baseline — do contrário a "economia" calculada não faz sentido e
+    // ficaria travada para sempre (evaluatedAt uma vez definido não é
+    // reavaliado).
+    if (followUpBill.referenceMonth <= baselineBill.referenceMonth) continue;
+
     const actualSavingsKwh =
       baselineBill.consumptionKwh != null && followUpBill.consumptionKwh != null
         ? baselineBill.consumptionKwh - followUpBill.consumptionKwh

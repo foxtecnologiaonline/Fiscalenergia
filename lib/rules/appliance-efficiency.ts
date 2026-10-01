@@ -98,7 +98,7 @@ export function checkOutdatedOrUnmaintained(
       type: "appliance_inefficiency",
       ruleCode: "appliance.outdated_or_unmaintained",
       severity: "medium",
-      description: `${appliance.name} (${appliance.room}) está marcado como ${conditionLabel} e representa ${(share * 100).toFixed(0)}% do consumo estimado da casa — priorize manutenção ou substituição.`,
+      description: `${appliance.name} (${appliance.room}): aparelho ${conditionLabel} que representa ${(share * 100).toFixed(0)}% do consumo estimado da casa — priorize manutenção ou substituição.`,
       estimatedImpactAmount: null,
     },
   ];

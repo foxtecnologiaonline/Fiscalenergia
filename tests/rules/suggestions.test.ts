@@ -1,6 +1,10 @@
-import type { Finding } from "@prisma/client";
+import type { ApplianceCatalog, Finding, HouseholdAppliance } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
+import {
+  checkOutdatedOrUnmaintained,
+  type ApplianceWithCatalog,
+} from "@/lib/rules/appliance-efficiency";
 import { buildSuggestion } from "@/lib/rules/suggestions";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
@@ -92,5 +96,68 @@ describe("buildSuggestion", () => {
   it("returns null for an unmapped rule code", () => {
     const finding = makeFinding({ ruleCode: "unknown.rule" });
     expect(buildSuggestion(finding)).toBeNull();
+  });
+
+  // Teste de integração entre appliance-efficiency.ts e suggestions.ts:
+  // garante que a descrição de CADA regra de aparelho realmente usada em
+  // produção segue o formato "Nome (Cômodo): ..." que o regex de
+  // suggestions.ts espera — e não apenas uma string escrita à mão no
+  // teste, que poderia ficar dessincronizada do formato real sem que
+  // nenhum teste percebesse (foi exatamente isso que aconteceu com a
+  // regra 9: a descrição não tinha o ":" e duas geladeiras antigas
+  // diferentes colidiam na mesma Suggestion).
+  function makeApplianceWithCatalog(
+    overrides: Partial<HouseholdAppliance> = {},
+    catalog: ApplianceCatalog | null = null,
+  ): ApplianceWithCatalog {
+    return {
+      id: "appliance-1",
+      consumerUnitId: "unit-1",
+      catalogId: null,
+      name: "Geladeira",
+      room: "Cozinha",
+      powerW: 150,
+      usageHoursPerDay: 8,
+      usageDaysPerWeek: 7,
+      quantity: 1,
+      ageYears: null,
+      lastMaintenanceAt: null,
+      condition: "antigo",
+      isCustom: false,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      catalog,
+      ...overrides,
+    };
+  }
+
+  it("extracts a per-appliance subject from the real appliance.outdated_or_unmaintained description", () => {
+    const [finding] = checkOutdatedOrUnmaintained(
+      makeApplianceWithCatalog({ condition: "antigo" }),
+      100, // totalEstimatedKwh -> 36/100 = 36% > 15% threshold
+    );
+    expect(finding).toBeDefined();
+
+    const suggestion = buildSuggestion({ ...makeFinding(), ...finding });
+    expect(suggestion?.applianceSubject).toEqual({
+      name: "Geladeira",
+      room: "Cozinha",
+    });
+  });
+
+  it("gives two different outdated appliances distinct suggestion titles (no silent overwrite)", () => {
+    const [fridgeFinding] = checkOutdatedOrUnmaintained(
+      makeApplianceWithCatalog({ name: "Geladeira", condition: "antigo" }),
+      100,
+    );
+    const [freezerFinding] = checkOutdatedOrUnmaintained(
+      makeApplianceWithCatalog({ name: "Freezer", condition: "sem_manutencao" }),
+      100,
+    );
+
+    const fridgeSuggestion = buildSuggestion({ ...makeFinding(), ...fridgeFinding });
+    const freezerSuggestion = buildSuggestion({ ...makeFinding(), ...freezerFinding });
+
+    expect(fridgeSuggestion?.title).not.toBe(freezerSuggestion?.title);
   });
 });

@@ -80,6 +80,18 @@ describe("checkUnexplainedConsumptionJump", () => {
     expect(findings).toEqual([]);
   });
 
+  it("does not flag when the new appliance was registered mid-way through the billed month itself", () => {
+    // referenceMonth da fatura de março é sempre meia-noite UTC do dia 1
+    // — um aparelho cadastrado em qualquer outro dia de março (o caso
+    // comum: compra o aparelho e só depois a fatura daquele mês chega)
+    // precisa continuar explicando o salto.
+    const bills = [bill("2026-03", 500), bill("2026-02", 300)];
+    const findings = checkUnexplainedConsumptionJump(bills, [
+      applianceCreatedAt("2026-03-10T00:00:00.000Z"),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
   it("does not flag when the previous bill had zero consumption", () => {
     const bills = [bill("2026-03", 500), bill("2026-02", 0)];
     expect(checkUnexplainedConsumptionJump(bills, [])).toEqual([]);

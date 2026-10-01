@@ -91,10 +91,15 @@ export function checkUnexplainedConsumptionJump(
     (latest.consumptionKwh - previous.consumptionKwh) / previous.consumptionKwh;
   if (jump <= CONSUMPTION_JUMP_RATIO) return [];
 
+  // Sem limite superior de propósito: `latest.referenceMonth` é sempre
+  // meia-noite UTC do dia 1 do mês faturado, então um aparelho cadastrado
+  // em qualquer outro dia desse mesmo mês (o caso comum — o usuário
+  // compra o aparelho e só depois a fatura daquele mês chega) ficaria de
+  // fora se comparado contra essa data. Qualquer aparelho cadastrado
+  // depois do mês anterior já processado é uma explicação válida para o
+  // salto desta fatura.
   const hasNewAppliance = appliances.some(
-    (appliance) =>
-      appliance.createdAt > previous.referenceMonth &&
-      appliance.createdAt <= latest.referenceMonth,
+    (appliance) => appliance.createdAt > previous.referenceMonth,
   );
   if (hasNewAppliance) return [];
 

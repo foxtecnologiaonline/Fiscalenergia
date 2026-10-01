@@ -121,6 +121,8 @@ describe("lib/notifications", () => {
   });
 
   describe("notifyHighSeverityFindings", () => {
+    const EPOCH = new Date(0);
+
     it("does nothing when there are no high-severity findings", async () => {
       const bill = await createBill();
       await notifyHighSeverityFindings(
@@ -138,6 +140,7 @@ describe("lib/notifications", () => {
           },
         ],
         bill,
+        EPOCH,
       );
       expect(mockSendEmail).not.toHaveBeenCalled();
     });
@@ -170,6 +173,7 @@ describe("lib/notifications", () => {
           },
         ],
         bill,
+        EPOCH,
       );
 
       expect(mockSendEmail).toHaveBeenCalledTimes(1);
@@ -180,6 +184,137 @@ describe("lib/notifications", () => {
       expect(notifications[0].message).toContain("2 achado(s)");
       expect(notifications[0].message).toContain("Tarifa muito divergente.");
       expect(notifications[0].message).toContain("Salto de consumo.");
+    });
+
+    it("always notifies for a bill-scoped finding, even if an old matching Suggestion predates sinceDate", async () => {
+      const bill = await createBill();
+      // Achados com billId != null (fatura/leitura) nunca são recriados —
+      // são sempre um fato novo desta fatura específica, então notificam
+      // mesmo que, por coincidência, exista uma Suggestion antiga com o
+      // mesmo ruleCode+title de um ciclo anterior.
+      await db.suggestion.create({
+        data: {
+          consumerUnitId: unitId,
+          ruleCode: "billing.kwh_rate_mismatch",
+          title: "Contestar tarifa de kWh cobrada incorretamente",
+          description: "desc antiga",
+        },
+      });
+      const sinceDate = new Date(Date.now() + 60_000); // no futuro -> suggestion é "antiga"
+
+      await notifyHighSeverityFindings(
+        [
+          {
+            id: "f1",
+            consumerUnitId: unitId,
+            billId: bill.id,
+            type: "billing_error",
+            ruleCode: "billing.kwh_rate_mismatch",
+            severity: "high",
+            description: "Tarifa muito divergente.",
+            estimatedImpactAmount: 100,
+            createdAt: new Date(),
+          },
+        ],
+        bill,
+        sinceDate,
+      );
+
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips a recurring appliance-derived finding whose Suggestion already existed before this run", async () => {
+      const bill = await createBill();
+      const sinceDate = new Date();
+      // Simula uma Suggestion já upsertada em um ciclo ANTERIOR (createdAt
+      // no passado, antes de sinceDate).
+      await db.suggestion.create({
+        data: {
+          consumerUnitId: unitId,
+          ruleCode: "appliance.outdated_or_unmaintained",
+          title: "Agendar manutenção ou considerar substituição do aparelho — Geladeira (Cozinha)",
+          description: "Geladeira (Cozinha): aparelho antigo...",
+          createdAt: new Date(sinceDate.getTime() - 60_000),
+        },
+      });
+
+      await notifyHighSeverityFindings(
+        [
+          {
+            id: "f1",
+            consumerUnitId: unitId,
+            billId: null,
+            type: "appliance_inefficiency",
+            ruleCode: "appliance.outdated_or_unmaintained",
+            severity: "high",
+            description: "Geladeira (Cozinha): aparelho antigo...",
+            estimatedImpactAmount: null,
+            createdAt: new Date(),
+          },
+        ],
+        bill,
+        sinceDate,
+      );
+
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("notifies for an appliance-derived finding whose Suggestion was just created in this run", async () => {
+      const bill = await createBill();
+      const sinceDate = new Date();
+      await db.suggestion.create({
+        data: {
+          consumerUnitId: unitId,
+          ruleCode: "appliance.outdated_or_unmaintained",
+          title: "Agendar manutenção ou considerar substituição do aparelho — Geladeira (Cozinha)",
+          description: "Geladeira (Cozinha): aparelho antigo...",
+          createdAt: new Date(sinceDate.getTime() + 1000),
+        },
+      });
+
+      await notifyHighSeverityFindings(
+        [
+          {
+            id: "f1",
+            consumerUnitId: unitId,
+            billId: null,
+            type: "appliance_inefficiency",
+            ruleCode: "appliance.outdated_or_unmaintained",
+            severity: "high",
+            description: "Geladeira (Cozinha): aparelho antigo...",
+            estimatedImpactAmount: null,
+            createdAt: new Date(),
+          },
+        ],
+        bill,
+        sinceDate,
+      );
+
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("HTML escaping", () => {
+    it("escapes HTML-significant characters from free-form text before building the email body", async () => {
+      const bill = await createBill({
+        status: "error",
+        errorMessage: '<b onmouseover="x">Falha & "erro" <script>',
+      });
+
+      await notifyBillProcessed(bill);
+
+      const html = mockSendEmail.mock.calls.at(-1)?.[0]?.html as string;
+      expect(html).not.toContain("<b onmouseover");
+      expect(html).not.toContain("<script>");
+      expect(html).toContain("&lt;b onmouseover=&quot;x&quot;&gt;");
+      expect(html).toContain("Falha &amp; &quot;erro&quot;");
+
+      // O texto original (não escapado) continua sendo o que fica
+      // guardado no banco — React já escapa ao renderizar na UI.
+      const notifications = await db.notification.findMany({
+        where: { userId, billId: bill.id },
+      });
+      expect(notifications[0].message).toContain('<b onmouseover="x">');
     });
   });
 

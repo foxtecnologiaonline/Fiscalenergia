@@ -157,22 +157,27 @@ export function RoomForm({
   async function handleSave(advance: boolean) {
     setError(null);
     setIsSaving(true);
-    try {
-      for (const row of rows) {
-        const baseUrl = `/api/consumer-units/${unitId}/appliances`;
 
+    const baseUrl = `/api/consumer-units/${unitId}/appliances`;
+
+    // Disparadas em paralelo (não uma a uma): cada chamada recomputa as
+    // regras de aparelho da UC inteira (transação Serializable com
+    // retry), então um loop sequencial faria N recomputos completos um
+    // atrás do outro para um único clique em "Salvar cômodo" — aqui as N
+    // requisições saem juntas e cada recompute concorrente já sabe lidar
+    // com a disputa (ver lib/rules/apply-appliance-rules.ts).
+    const results = await Promise.allSettled(
+      rows.map((row) => {
         if (row.removed) {
-          if (row.applianceId) {
-            await sendAppliance(`${baseUrl}/${row.applianceId}`, "DELETE");
-          }
-          continue;
+          return row.applianceId
+            ? sendAppliance(`${baseUrl}/${row.applianceId}`, "DELETE")
+            : Promise.resolve();
         }
 
         if (!row.isCustom && !row.included) {
-          if (row.applianceId) {
-            await sendAppliance(`${baseUrl}/${row.applianceId}`, "DELETE");
-          }
-          continue;
+          return row.applianceId
+            ? sendAppliance(`${baseUrl}/${row.applianceId}`, "DELETE")
+            : Promise.resolve();
         }
 
         const payload = {
@@ -187,24 +192,38 @@ export function RoomForm({
           isCustom: row.isCustom,
         };
 
-        if (row.applianceId) {
-          await sendAppliance(`${baseUrl}/${row.applianceId}`, "PATCH", payload);
-        } else {
-          await sendAppliance(baseUrl, "POST", payload);
-        }
-      }
+        return row.applianceId
+          ? sendAppliance(`${baseUrl}/${row.applianceId}`, "PATCH", payload)
+          : sendAppliance(baseUrl, "POST", payload);
+      }),
+    );
 
-      if (advance) {
-        onSavedAndContinue();
-      } else {
-        onSaved();
-      }
-    } catch (err) {
+    setIsSaving(false);
+
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+
+    if (failures.length > 0) {
+      const firstError = failures[0].reason;
       setError(
-        err instanceof Error ? err.message : "Não foi possível salvar este cômodo",
+        firstError instanceof Error
+          ? firstError.message
+          : "Não foi possível salvar algum item deste cômodo",
       );
-    } finally {
-      setIsSaving(false);
+      // Atualiza mesmo com falha parcial — o que deu certo (ex.: 9 de 10
+      // linhas) precisa aparecer refletido, em vez de a tela inteira
+      // ficar presa em um estado desatualizado por causa de uma única
+      // linha com erro. Nunca avança de cômodo quando há falha, para o
+      // usuário poder ver e corrigir o item problemático.
+      onSaved();
+      return;
+    }
+
+    if (advance) {
+      onSavedAndContinue();
+    } else {
+      onSaved();
     }
   }
 

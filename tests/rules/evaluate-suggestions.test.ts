@@ -153,6 +153,33 @@ describe("evaluateAppliedSuggestions", () => {
     expect(evaluated[1].actualSavingsKwh).toBe(120);
   });
 
+  it("does not evaluate against an older, out-of-order follow-up bill", async () => {
+    // Fatura de fevereiro já serviu de baseline; o usuário depois envia
+    // (fora de ordem) a fatura de janeiro, que faltava. Essa fatura mais
+    // antiga nunca deve ser tratada como follow-up — a "economia" não
+    // faria sentido e ficaria travada para sempre.
+    const baseline = await createBill(MONTH_2, 400, 400);
+    const suggestion = await createAppliedSuggestion(baseline.id);
+    const olderBill = await createBill(MONTH_1, 500, 500);
+
+    expect(await evaluateAppliedSuggestions(unitId, olderBill)).toEqual([]);
+
+    const stored = await db.suggestion.findUnique({ where: { id: suggestion.id } });
+    expect(stored?.followUpBillId).toBeNull();
+    expect(stored?.evaluatedAt).toBeNull();
+  });
+
+  it("does not evaluate against a follow-up bill for the same reference month as the baseline", async () => {
+    const baseline = await createBill(MONTH_1, 500, 500);
+    const suggestion = await createAppliedSuggestion(baseline.id);
+    const sameMonthBill = await createBill(MONTH_1, 450, 450);
+
+    expect(await evaluateAppliedSuggestions(unitId, sameMonthBill)).toEqual([]);
+
+    const stored = await db.suggestion.findUnique({ where: { id: suggestion.id } });
+    expect(stored?.evaluatedAt).toBeNull();
+  });
+
   it("does not evaluate when there is no baseline bill", async () => {
     await db.suggestion.create({
       data: {
